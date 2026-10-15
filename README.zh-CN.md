@@ -452,6 +452,58 @@ jobs:
 
 brooks-lint 会把你的 diff 发送到这里填写的主机，因此只应指向你信任其接触源码的一方。自己运行 `scripts/ci-review.mjs` 完全不需要参数 —— Anthropic SDK 会直接读取 `ANTHROPIC_BASE_URL`。
 
+**Amazon Bedrock 上的 Claude。** Bedrock 原生提供 [Anthropic Messages API](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-messages-api.html)，并接受 SDK 本来就会发送的 `x-api-key` 头，因此上面三个 input 就是全部集成 —— 不需要 Bedrock SDK，不需要新的客户端，也不需要改动 action。把 `api-base-url` 指向以下任一端点：
+
+| 端点 | `api-base-url` |
+|---|---|
+| `bedrock-runtime` | `https://bedrock-runtime.{region}.amazonaws.com/anthropic` |
+| `bedrock-mantle` | `https://bedrock-mantle.{region}.api.aws/anthropic` |
+
+AWS 建议新应用使用 `bedrock-runtime` —— 它是带 AWS SDK 集成、IAM 认证和调用日志的端点。`bedrock-mantle` 是 Anthropic 兼容入口，额外支持 Bedrock API 密钥认证和 Workspaces。两者的 `anthropic-api-key` 都传入 [Bedrock API 密钥](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html)；从通过 OIDC 扮演的角色现签一个短期密钥（最长 12 小时有效，并继承签发身份的权限），这样就不必把长期密钥存进 secret：
+
+```yaml
+# .github/workflows/brooks-lint-bedrock.yml
+jobs:
+  brooks-lint:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write        # mint the OIDC token that assumes the AWS role
+      contents: read
+      pull-requests: write   # post the review comment
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::111122223333:role/brooks-lint-bedrock
+          aws-region: us-east-1
+      - id: bedrock
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: |
+          npm install --no-save @aws/bedrock-token-generator
+          token=$(node --input-type=module -e '
+            import { getTokenProvider } from "@aws/bedrock-token-generator";
+            const provideToken = getTokenProvider();
+            process.stdout.write(await provideToken());
+          ')
+          echo "::add-mask::$token"   # keep it out of the log before it moves
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+      - uses: hyhmrright/brooks-lint/.github/actions/brooks-lint@v1.4.3
+        with:
+          mode: review
+          api-base-url: https://bedrock-runtime.us-east-1.amazonaws.com/anthropic
+          anthropic-api-key: ${{ steps.bedrock.outputs.token }}
+          model: global.anthropic.claude-sonnet-5
+```
+
+令牌生成器会读取 `configure-aws-credentials` 导出的凭证和区域，因此签发步骤本身不需要任何 input。SigV4 只为这次签发签名；评审调用本身是一次普通的 `x-api-key` 请求，`anthropic-version` 由 SDK 发送。模型 id 原样通过 `model` 传入 —— `global.anthropic.claude-sonnet-5`、`us.anthropic.claude-sonnet-5`、`anthropic.claude-sonnet-5`。
+
+两个前置条件，都在本仓库之外：在你指定的区域里已开启该 Claude 模型的访问权限（Bedrock 控制台 → **Model access**），以及一个 workflow 可以扮演、且策略允许该调用的 IAM 角色 —— `bedrock:InvokeModel` 加 `bedrock:CallWithBearerToken`，Mantle 端点则是 `bedrock-mantle:CallWithBearerToken`。签发出的令牌只继承该角色的权限，不会更多，所以角色就是全部影响面。
+
+**这条路无法评审来自 fork 的 pull request。** GitHub 既不会把仓库 secret、也不会把 `id-token: write` 授予 fork 的 `pull_request` 运行，于是既没有可换取角色的 OIDC 令牌，也没有可回退的已存密钥 —— job 会直接失败而不是完成评审。要覆盖 fork，需要换用别的触发方式（`pull_request_target`，并付出针对不受信任分支运行所需的全部谨慎），或换一个密钥来源。上面那条关于信任的提醒依然成立；而 Bedrock 正是满足它的一种方式 —— diff 送往的是你自己选定区域里的你自己的 AWS 账户。
+
 **成本：** 每次 PR 运行约 $0.05–0.15，取决于 diff 大小和模型。建议仅在 `pull_request` 事件上运行。
 
 ## 路线图

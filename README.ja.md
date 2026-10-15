@@ -463,6 +463,58 @@ jobs:
 
 brooks-lint はここで指定したホストに diff を送信するため、ソースコードを預けられる相手だけを指定してください。`scripts/ci-review.mjs` を自分で実行する場合はフラグは不要です — Anthropic SDK が `ANTHROPIC_BASE_URL` を直接読み取ります。
 
+**Amazon Bedrock 上の Claude。** Bedrock は [Anthropic Messages API](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-messages-api.html) をネイティブに提供し、SDK がすでに送っている `x-api-key` ヘッダーをそのまま受け付けます。つまり上記の 3 つの input だけで統合は完了します — Bedrock 用 SDK も、新しいクライアントも、action 側の変更も不要です。`api-base-url` には次のいずれかのエンドポイントを指定します：
+
+| エンドポイント | `api-base-url` |
+|---|---|
+| `bedrock-runtime` | `https://bedrock-runtime.{region}.amazonaws.com/anthropic` |
+| `bedrock-mantle` | `https://bedrock-mantle.{region}.api.aws/anthropic` |
+
+AWS は新規アプリケーションには `bedrock-runtime` を推奨しています — AWS SDK 統合、IAM 認証、呼び出しログを備えたエンドポイントです。`bedrock-mantle` は Anthropic 互換の窓口で、Bedrock API キー認証と Workspaces に対応します。どちらの場合も `anthropic-api-key` に渡すのは [Bedrock API キー](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html)です。有効期間が最大 12 時間で、生成した ID の権限をそのまま継承する短期キーを OIDC で引き受けたロールから発行すれば、長期キーをシークレットに置く必要はありません：
+
+```yaml
+# .github/workflows/brooks-lint-bedrock.yml
+jobs:
+  brooks-lint:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write        # mint the OIDC token that assumes the AWS role
+      contents: read
+      pull-requests: write   # post the review comment
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::111122223333:role/brooks-lint-bedrock
+          aws-region: us-east-1
+      - id: bedrock
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: |
+          npm install --no-save @aws/bedrock-token-generator
+          token=$(node --input-type=module -e '
+            import { getTokenProvider } from "@aws/bedrock-token-generator";
+            const provideToken = getTokenProvider();
+            process.stdout.write(await provideToken());
+          ')
+          echo "::add-mask::$token"   # keep it out of the log before it moves
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+      - uses: hyhmrright/brooks-lint/.github/actions/brooks-lint@v1.4.3
+        with:
+          mode: review
+          api-base-url: https://bedrock-runtime.us-east-1.amazonaws.com/anthropic
+          anthropic-api-key: ${{ steps.bedrock.outputs.token }}
+          model: global.anthropic.claude-sonnet-5
+```
+
+トークンジェネレーターは `configure-aws-credentials` がエクスポートした認証情報とリージョンを読み取るため、発行ステップ自体に input は要りません。SigV4 が署名するのはこの発行のみで、レビュー本体の呼び出しは通常の `x-api-key` リクエストです。`anthropic-version` は SDK が送信します。モデル id はそのまま `model` に渡します — `global.anthropic.claude-sonnet-5`、`us.anthropic.claude-sonnet-5`、`anthropic.claude-sonnet-5`。
+
+前提条件は 2 つ、いずれもこのリポジトリの外側です：指定するリージョンで対象の Claude モデルへのアクセスが有効になっていること（Bedrock コンソール → **Model access**）、そして workflow が引き受けられる IAM ロールで、呼び出しを許可するポリシーが付いていること — `bedrock:InvokeModel` と `bedrock:CallWithBearerToken`、Mantle エンドポイントの場合は `bedrock-mantle:CallWithBearerToken`。発行されたトークンはそのロールの権限しか継承しないため、影響範囲はロールそのものです。
+
+**この方法では fork からの pull request はレビューできません。** GitHub は fork からの `pull_request` 実行にリポジトリのシークレットも `id-token: write` も与えないため、ロールと交換する OIDC トークンも、代わりに使える保存済みキーも存在せず、ジョブはレビューせずに失敗します。fork をカバーするには別のトリガー（`pull_request_target` — 信頼できないブランチを対象に実行する際の注意をすべて払った上で）か、別のキー供給源が必要です。上記の信頼に関する注意も引き続き有効です。Bedrock はそれを満たす一つの方法でもあります — diff が送られるのは、あなたが選んだリージョンのあなた自身の AWS アカウントだからです。
+
 **コスト：** PR 実行ごとにおよそ $0.05〜0.15、diff のサイズとモデルによります。`pull_request` イベントのみで実行することを推奨します。
 
 ## ロードマップ

@@ -29,3 +29,38 @@ jobs:
           # fail-on-regression: true     # fail if the Health Score dropped vs the last run
           # sarif-file: brooks-lint.sarif  # also upload findings to GitHub Code Scanning
           # api-base-url: https://your-gateway.example.com  # any Anthropic-compatible /v1/messages endpoint
+
+      # Claude on Amazon Bedrock. Bedrock serves the Anthropic Messages API
+      # natively and takes the same `x-api-key` the SDK already sends, so the
+      # inputs above are the whole integration. Add `id-token: write` to the
+      # permissions block, assume a role, mint a short-term Bedrock API key,
+      # mask it, and hand it to the action in place of the secret:
+      #
+      # - uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     role-to-assume: arn:aws:iam::111122223333:role/brooks-lint-bedrock
+      #     aws-region: us-east-1
+      # - id: bedrock
+      #   working-directory: ${{ runner.temp }}
+      #   shell: bash
+      #   run: |
+      #     npm install --no-save @aws/bedrock-token-generator
+      #     token=$(node --input-type=module -e '
+      #       import { getTokenProvider } from "@aws/bedrock-token-generator";
+      #       const provideToken = getTokenProvider();
+      #       process.stdout.write(await provideToken());
+      #     ')
+      #     echo "::add-mask::$token"
+      #     echo "token=$token" >> "$GITHUB_OUTPUT"
+      # - uses: hyhmrright/brooks-lint/.github/actions/brooks-lint@v1.4.3
+      #   with:
+      #     mode: review
+      #     api-base-url: https://bedrock-runtime.us-east-1.amazonaws.com/anthropic
+      #     anthropic-api-key: ${{ steps.bedrock.outputs.token }}
+      #     model: global.anthropic.claude-sonnet-5
+      #
+      # `bedrock-mantle` is the other endpoint:
+      # https://bedrock-mantle.{region}.api.aws/anthropic — AWS recommends
+      # bedrock-runtime for new applications. A forked `pull_request` run gets
+      # neither repository secrets nor `id-token: write`, so this path cannot
+      # review fork PRs. See the README section "Claude on Amazon Bedrock".
