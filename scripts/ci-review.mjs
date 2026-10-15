@@ -4,8 +4,9 @@
  *
  * Reads git diff from the project, assembles the system prompt for the mode,
  * calls Claude API, and outputs JSON { report, score, mode, scope, trend,
- * findings, previousScore, delta } to stdout. With --format sarif it emits a
- * SARIF 2.1.0 log instead (for GitHub Code Scanning).
+ * findings, previousScore, delta, truncated } to stdout. With --format sarif it
+ * emits a SARIF 2.1.0 log instead (for GitHub Code Scanning); a truncated
+ * report is annotated on stderr either way.
  *
  * Usage:
  *   node scripts/ci-review.mjs \
@@ -30,7 +31,7 @@ import { assembleSystemPrompt, VALID_MODES } from "./assemble-prompt.mjs";
 import { readHistory, getTrend } from "./history.mjs";
 import { countFindings } from "./report-parse.mjs";
 import { reportToSarif } from "./sarif.mjs";
-import { parseArgs, parseMaxTokens, maxTokensError } from "./cli-utils.mjs";
+import { parseArgs, parseMaxTokens, maxTokensError, warnIfTruncated } from "./cli-utils.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -108,6 +109,13 @@ try {
   process.exit(1);
 }
 
+// A response that stopped at the ceiling is missing the findings it had not
+// written yet, and every number below is derived from the findings that did
+// arrive: countFindings() counts fewer of them and the Health Score, being
+// base 100 minus deductions, comes back higher. Say so on the run before
+// emitting a score a fail-below gate is about to believe.
+const truncated = warnIfTruncated(message);
+
 // The first block is not always the text one — an endpoint that returns a
 // thinking block first would otherwise yield undefined.
 const report = message.content.find((block) => block.type === "text")?.text ?? "";
@@ -148,7 +156,7 @@ if (format === "sarif") {
   console.log(sarif);
 } else {
   console.log(JSON.stringify(
-    { report, score, mode, scope, trend: trendNote, findings, previousScore, delta },
+    { report, score, mode, scope, trend: trendNote, findings, previousScore, delta, truncated },
     null,
     2,
   ));

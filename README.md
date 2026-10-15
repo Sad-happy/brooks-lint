@@ -463,7 +463,7 @@ The action posts the review as a PR comment and optionally fails the check if th
 
 brooks-lint sends your diff to whatever host you name here, so only point it at one you trust with your source. Running `scripts/ci-review.mjs` yourself needs no flag at all — the Anthropic SDK reads `ANTHROPIC_BASE_URL` directly.
 
-**Output ceiling.** `max-tokens: 8192` raises the report's output ceiling (default 4096). A long `sweep` or `health` report can hit that ceiling, and truncation fails in the wrong direction: the findings that were cut off are never counted, so the Health Score comes back *higher* and a `fail-below` gate can pass a run it should have failed. Raise it if reports end mid-finding.
+**Output ceiling.** `max-tokens: 8192` raises the report's output ceiling (default 4096). A long `sweep` or `health` report can hit that ceiling, and truncation fails in the wrong direction: the findings that were cut off are never counted, so the Health Score comes back *higher* and a `fail-below` gate can pass a run it should have failed. You do not have to notice that yourself: a run whose report was cut off carries a `::warning::` annotation, repeats the warning in the PR comment, and sets `"truncated": true` in `brooks-lint-report.json` — raise `max-tokens` and re-run. The run is not failed over it.
 
 **Cost:** ~$0.05–0.15 per PR run depending on diff size and model. Recommend running on `pull_request` events only.
 

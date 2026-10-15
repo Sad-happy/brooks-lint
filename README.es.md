@@ -463,7 +463,7 @@ La action publica la revisión como un comentario del PR y, opcionalmente, hace 
 
 brooks-lint envía tu diff al host que indiques aquí, así que apúntalo solo a uno en el que confíes con tu código fuente. Ejecutar `scripts/ci-review.mjs` por tu cuenta no necesita ninguna opción: el SDK de Anthropic lee `ANTHROPIC_BASE_URL` directamente.
 
-**Límite de salida.** `max-tokens: 8192` eleva el límite de tokens de salida del informe (por defecto 4096). Un informe largo de `sweep` o `health` puede alcanzar ese límite, y el truncamiento falla en la dirección equivocada: los hallazgos cortados nunca se cuentan, así que la puntuación de salud sale *más alta* y un gate `fail-below` puede aprobar una ejecución que debería haber fallado. Súbelo si los informes terminan a mitad de un hallazgo.
+**Límite de salida.** `max-tokens: 8192` eleva el límite de tokens de salida del informe (por defecto 4096). Un informe largo de `sweep` o `health` puede alcanzar ese límite, y el truncamiento falla en la dirección equivocada: los hallazgos cortados nunca se cuentan, así que la puntuación de salud sale *más alta* y un gate `fail-below` puede aprobar una ejecución que debería haber fallado. No tienes que darte cuenta tú: una ejecución cuyo informe se cortó lleva una anotación `::warning::`, repite el aviso en el comentario del PR y deja `"truncated": true` en `brooks-lint-report.json` — sube `max-tokens` y vuelve a ejecutar. La ejecución no falla por ello.
 
 **Coste:** ~$0,05–0,15 por ejecución de PR, según el tamaño del diff y el modelo. Se recomienda ejecutar solo en eventos `pull_request`.
 

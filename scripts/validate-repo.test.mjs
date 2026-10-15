@@ -1,8 +1,9 @@
 /**
  * Unit tests for the scripts/ helpers: frontmatter parsing, prompt assembly,
  * history, eval classification, report parsing, SARIF export, CI gates, CLI
- * flag parsing, and the parser-fidelity summarizer — plus an integration check
- * that validate-repo.mjs exits 0 against this repository.
+ * flag parsing, truncation reporting, and the parser-fidelity summarizer — plus
+ * integration checks that the action's PR-comment step renders and that
+ * validate-repo.mjs exits 0 against this repository.
  *
  * Run:  node scripts/validate-repo.test.mjs
  *
@@ -13,6 +14,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import path from "node:path";
 import os from "node:os";
 import { assembleSystemPrompt, VALID_MODES } from "./assemble-prompt.mjs";
@@ -44,7 +46,14 @@ import { extractRiskCodes, classify } from "./eval-utils.mjs";
 import { parseFindings, countFindings, extractLocation, SOURCE_EXTENSIONS } from "./report-parse.mjs";
 import { reportToSarif } from "./sarif.mjs";
 import { severityBreached, isRegression } from "./ci-gate.mjs";
-import { parseArgs, parseMaxTokens, maxTokensError, DEFAULT_MAX_TOKENS } from "./cli-utils.mjs";
+import {
+  parseArgs,
+  parseMaxTokens,
+  maxTokensError,
+  warnIfTruncated,
+  DEFAULT_MAX_TOKENS,
+  TRUNCATION_NOTICE,
+} from "./cli-utils.mjs";
 import { summarize } from "./benchmark.mjs";
 import { versionRefs } from "./version-refs.mjs";
 import {
@@ -909,6 +918,177 @@ test("the error message names the flag and a usable value", () => {
   assert.match(maxTokensError("8k"), /--max-tokens/);
   assert.match(maxTokensError("8k"), new RegExp(String(DEFAULT_MAX_TOKENS)));
   assert.match(maxTokensError(true), /no value given/);
+});
+
+// ── cli-utils: warnIfTruncated ─────────────────────────────────────────────
+
+console.log("\nwarnIfTruncated");
+
+/** Which console channel a call wrote to, and what it wrote. */
+function captureConsole(fn) {
+  const out = [];
+  const err = [];
+  const { log, error } = console;
+  console.log = (...parts) => out.push(parts.join(" "));
+  console.error = (...parts) => err.push(parts.join(" "));
+  try {
+    return { value: fn(), out, err };
+  } finally {
+    console.log = log;
+    console.error = error;
+  }
+}
+
+test("a response that stopped at the output ceiling is annotated", () => {
+  const { value, err } = captureConsole(() => warnIfTruncated({ stop_reason: "max_tokens" }));
+  assert.equal(value, true);
+  assert.deepEqual(err, [`::warning::${TRUNCATION_NOTICE}`]);
+});
+
+test("the annotation goes to stderr, never stdout", () => {
+  // action.yml redirects ci-review.mjs's stdout into brooks-lint-report.json,
+  // so a workflow command written there lands inside the JSON instead of the
+  // workflow log. GitHub reads these commands from stderr too.
+  const { out, err } = captureConsole(() => warnIfTruncated({ stop_reason: "max_tokens" }));
+  assert.deepEqual(out, [], "stdout is the JSON report — nothing else may be written to it");
+  assert.equal(err.length, 1);
+});
+
+test("it warns rather than failing the build", () => {
+  // ::error:: would fail the run on what is still a usable report, and
+  // ::alert:: is not a workflow command at all.
+  const { err } = captureConsole(() => warnIfTruncated({ stop_reason: "max_tokens" }));
+  assert.ok(err[0].startsWith("::warning::"), err[0]);
+  assert.doesNotMatch(err[0], /::(error|alert)::/);
+});
+
+test("a complete response is silent and reads as untruncated", () => {
+  for (const message of [
+    { stop_reason: "end_turn" },
+    { stop_reason: "stop_sequence" },
+    { stop_reason: "tool_use" },
+    { stop_reason: null },
+    {},
+    null,
+    undefined,
+  ]) {
+    const { value, out, err } = captureConsole(() => warnIfTruncated(message));
+    const label = JSON.stringify(message ?? null);
+    assert.equal(value, false, `expected ${label} to read as untruncated`);
+    assert.deepEqual([...out, ...err], [], `expected ${label} to print nothing`);
+  }
+});
+
+test("the notice is a single line, as a workflow command requires", () => {
+  // GitHub parses a ::warning:: up to the first newline, which would otherwise
+  // truncate the warning about truncation.
+  assert.doesNotMatch(TRUNCATION_NOTICE, /[\r\n]/);
+});
+
+test("the notice names the knob to turn and which way the score is wrong", () => {
+  assert.match(TRUNCATION_NOTICE, /max-tokens/);
+  assert.match(TRUNCATION_NOTICE, /Health Score/);
+  assert.match(TRUNCATION_NOTICE, /too high/);
+});
+
+// ── action.yml: the Post PR Comment step ───────────────────────────────────
+
+console.log("\nPost PR Comment (action.yml)");
+
+/**
+ * The dedented body of a `script: |` block in the composite action, keyed by
+ * step name. Read from the shipped file so the test exercises what CI runs.
+ */
+function actionScript(stepName) {
+  const yml = readFileSync(path.join(__dirname, "..", ".github", "actions", "brooks-lint", "action.yml"), "utf8");
+  const step = yml.split(`- name: ${stepName}`)[1];
+  assert.ok(step, `action.yml should define a step named ${stepName}`);
+  const block = step.split("script: |\n")[1];
+  assert.ok(block, `step ${stepName} should carry a script: | block`);
+  const rows = block.split("\n");
+  const indent = rows[0].match(/^ +/)[0];
+  const body = [];
+  for (const row of rows) {
+    if (row.trim() === "") {
+      body.push("");
+      continue;
+    }
+    if (!row.startsWith(indent)) break;
+    body.push(row.slice(indent.length));
+  }
+  return body.join("\n");
+}
+
+/**
+ * Run a github-script body the way actions/github-script@v7 does — as the body
+ * of an AsyncFunction with `require`, `github` and `context` injected — and
+ * return the comment it tried to post.
+ *
+ * The step reads brooks-lint-report.json from the working directory and imports
+ * the notice wording from scripts/cli-utils.mjs, so both are set up here. That
+ * import is the one thing in this change CI cannot be asked about twice: it
+ * only runs on a truncated report, which is exactly the run that must not
+ * break.
+ */
+async function renderPrComment(source, report) {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "brooks-pr-comment-"));
+  const cwd = process.cwd();
+  const previousRoot = process.env.BROOKS_LINT_ROOT;
+  let posted = null;
+  const github = { rest: { issues: { createComment: (params) => { posted = params; } } } };
+  const context = { repo: { owner: "hyhmrright", repo: "brooks-lint" }, issue: { number: 7 } };
+  try {
+    writeFileSync(path.join(dir, "brooks-lint-report.json"), JSON.stringify(report), "utf8");
+    process.chdir(dir);
+    process.env.BROOKS_LINT_ROOT = path.join(__dirname, "..");
+    const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+    await new AsyncFunction("require", "github", "context", source)(
+      createRequire(import.meta.url),
+      github,
+      context,
+    );
+  } finally {
+    process.chdir(cwd);
+    if (previousRoot === undefined) delete process.env.BROOKS_LINT_ROOT;
+    else process.env.BROOKS_LINT_ROOT = previousRoot;
+    rmSync(dir, { recursive: true, force: true });
+  }
+  return posted;
+}
+
+// Rendered up front: top-level await lets the async step body finish before the
+// synchronous assertions below read its output. A throw is kept rather than
+// raised here, so a broken step fails these three tests instead of aborting the
+// rest of the suite.
+let renderError = null;
+let truncatedComment = null;
+let wholeComment = null;
+try {
+  const commentScript = actionScript("Post PR Comment");
+  const report = { report: "## PR Review\n\n**Health Score: 92/100**", trend: "First CI run — no trend data" };
+  truncatedComment = await renderPrComment(commentScript, { ...report, truncated: true });
+  wholeComment = await renderPrComment(commentScript, { ...report, truncated: false });
+} catch (err) {
+  renderError = err;
+}
+
+test("the step posts the report and the trend to the pull request", () => {
+  assert.equal(renderError, null, `the step threw: ${renderError?.message}`);
+  assert.equal(truncatedComment.issue_number, 7);
+  assert.match(wholeComment.body, /Health Score: 92\/100/);
+  assert.match(wholeComment.body, /\*\*Trend:\*\* First CI run/);
+});
+
+test("a truncated report warns the reviewer in the comment itself", () => {
+  // Imported from cli-utils.mjs, not restated in the YAML: the comment and the
+  // workflow annotation have one wording between them.
+  assert.ok(truncatedComment?.body.includes(TRUNCATION_NOTICE), truncatedComment?.body);
+  assert.match(truncatedComment.body, /\[!WARNING\]/);
+});
+
+test("an untruncated report says nothing about truncation", () => {
+  assert.ok(!wholeComment?.body.includes(TRUNCATION_NOTICE));
+  assert.doesNotMatch(wholeComment.body, /\[!WARNING\]/);
 });
 
 // ── Parser-fidelity benchmark on the FROZEN real-report corpus ─────────────

@@ -16,7 +16,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Anthropic from "@anthropic-ai/sdk";
 import { assembleSystemPrompt, VALID_MODES } from "./assemble-prompt.mjs";
-import { parseArgs, parseMaxTokens, maxTokensError } from "./cli-utils.mjs";
+import { parseArgs, parseMaxTokens, maxTokensError, warnIfTruncated } from "./cli-utils.mjs";
 import { extractRiskCodes, classify } from "./eval-utils.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -80,9 +80,10 @@ for (const scenario of scenarios) {
   let aiText = "";
   let verdict = "fail";
   let error = null;
+  let message = null;
 
   try {
-    const message = await client.messages.create({
+    message = await client.messages.create({
       model,
       max_tokens: maxTokens,
       system: systemPrompt,
@@ -96,6 +97,10 @@ for (const scenario of scenarios) {
   }
 
   process.stdout.write(`${verdict}\n`);
+  // After the verdict so the annotation does not split that line. A truncated
+  // response is a standing explanation for a surprising verdict here too: the
+  // risk codes classify() looked for may simply never have been written.
+  warnIfTruncated(message);
   results.push({ id: scenario.id, name: scenario.name, mode: scenario.mode, verdict, error });
 }
 

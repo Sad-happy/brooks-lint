@@ -1,6 +1,7 @@
 /**
- * Shared CLI argument parsing and defaults.
- * Used by: ci-review.mjs, run-evals-live.mjs
+ * Shared CLI argument parsing, defaults, and output-ceiling reporting.
+ * Used by: ci-review.mjs, run-evals-live.mjs, and the PR-comment step of
+ * .github/actions/brooks-lint/action.yml (which imports TRUNCATION_NOTICE).
  */
 
 /**
@@ -33,6 +34,45 @@ export function maxTokensError(raw) {
   // `true` means the flag was given with no value of its own.
   const got = raw === true ? "no value given" : JSON.stringify(raw);
   return `Invalid --max-tokens: ${got}. Must be a positive integer, e.g. --max-tokens ${DEFAULT_MAX_TOKENS}.`;
+}
+
+/**
+ * What a run says when the model stopped because it ran out of output tokens.
+ *
+ * One wording, two readers: the workflow annotation ci-review.mjs writes to
+ * stderr, and the PR comment action.yml posts — which imports this constant
+ * rather than restating it, so the two can never drift into disagreeing about
+ * what a truncated report means.
+ *
+ * Single line on purpose: GitHub parses a workflow command up to the first
+ * newline, so an embedded one would truncate the warning about truncation.
+ */
+export const TRUNCATION_NOTICE =
+  "brooks-lint's report hit the output ceiling and was cut off, so the Health Score is " +
+  "unreliable and probably too high — findings that never arrived are never deducted from " +
+  "it. Raise max-tokens and re-run before trusting this score or any gate built on it.";
+
+/**
+ * Emit a GitHub workflow annotation if a response was truncated, and report
+ * whether it was.
+ *
+ * On stderr, never stdout: action.yml redirects ci-review.mjs's stdout into
+ * brooks-lint-report.json, so a workflow command written there would land
+ * inside the JSON file and never reach the workflow log. GitHub reads these
+ * commands from a step's stderr too, which makes console.error the one channel
+ * that works on both paths.
+ *
+ * `::warning::` and not `::error::`: a truncated report is still a report, and
+ * the call here is to warn and keep reporting rather than fail the run. Raising
+ * this to an error would turn a measurement problem into a red build.
+ *
+ * @param {{stop_reason?: string}|null|undefined} message an Anthropic Messages response
+ * @returns {boolean} true when the response stopped at the output ceiling
+ */
+export function warnIfTruncated(message) {
+  if (message?.stop_reason !== "max_tokens") return false;
+  console.error(`::warning::${TRUNCATION_NOTICE}`);
+  return true;
 }
 
 export function parseArgs(argv) {

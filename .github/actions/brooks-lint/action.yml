@@ -129,7 +129,20 @@ runs:
           const fs = require('fs');
           const r = JSON.parse(fs.readFileSync('brooks-lint-report.json', 'utf8'));
           const trend = r.trend ? `\n\n**Trend:** ${r.trend}` : '';
-          const body = `## Brooks-Lint Review\n\n${r.report}${trend}\n\n---\n_Automated by [brooks-lint](https://github.com/hyhmrright/brooks-lint)_`;
+          // The report was cut off at the output ceiling, so the score above is
+          // too high — a reviewer reading the comment has to be told, not just
+          // whoever opens the run's annotations. The wording is imported from
+          // the module that writes the annotation rather than restated here, so
+          // the comment and the annotation cannot disagree. cli-utils.mjs is
+          // ESM, which is why this is import() and not require().
+          let truncation = '';
+          if (r.truncated) {
+            const { pathToFileURL } = require('url');
+            const url = pathToFileURL(`${process.env.BROOKS_LINT_ROOT}/scripts/cli-utils.mjs`).href;
+            const { TRUNCATION_NOTICE } = await import(url);
+            truncation = `\n\n> [!WARNING]\n> ${TRUNCATION_NOTICE}`;
+          }
+          const body = `## Brooks-Lint Review\n\n${r.report}${trend}${truncation}\n\n---\n_Automated by [brooks-lint](https://github.com/hyhmrright/brooks-lint)_`;
           await github.rest.issues.createComment({
             ...context.repo,
             issue_number: context.issue.number,
