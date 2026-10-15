@@ -14,7 +14,8 @@
  *     --skills-dir ./skills \
  *     --project-dir /path/to/project \
  *     [--format json|sarif] \
- *     [--sarif-out brooks-lint.sarif]
+ *     [--sarif-out brooks-lint.sarif] \
+ *     [--max-tokens 4096]
  *
  * Environment:
  *   ANTHROPIC_API_KEY  required
@@ -29,7 +30,7 @@ import { assembleSystemPrompt, VALID_MODES } from "./assemble-prompt.mjs";
 import { readHistory, getTrend } from "./history.mjs";
 import { countFindings } from "./report-parse.mjs";
 import { reportToSarif } from "./sarif.mjs";
-import { parseArgs } from "./cli-utils.mjs";
+import { parseArgs, parseMaxTokens, maxTokensError } from "./cli-utils.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -38,6 +39,7 @@ const args = parseArgs(process.argv.slice(2));
 const mode = args.mode ?? "review";
 const model = args.model ?? "claude-sonnet-4-6";
 const format = args.format ?? "json";
+const maxTokens = parseMaxTokens(args["max-tokens"]);
 const skillsDir = path.resolve(args["skills-dir"] ?? path.join(__dirname, "..", "skills"));
 const projectDir = path.resolve(args["project-dir"] ?? process.cwd());
 const toolVersion = JSON.parse(
@@ -51,6 +53,11 @@ if (!VALID_MODES.includes(mode)) {
 
 if (!["json", "sarif"].includes(format)) {
   console.error(`Unknown format: ${format}. Valid formats: json, sarif`);
+  process.exit(1);
+}
+
+if (maxTokens === null) {
+  console.error(maxTokensError(args["max-tokens"]));
   process.exit(1);
 }
 
@@ -92,7 +99,7 @@ let message;
 try {
   message = await client.messages.create({
     model,
-    max_tokens: 4096,
+    max_tokens: maxTokens,
     system: systemPrompt,
     messages: [{ role: "user", content: userMessage }],
   });

@@ -8,6 +8,7 @@
  *   ANTHROPIC_API_KEY=... node scripts/run-evals-live.mjs --id 5
  *   ANTHROPIC_API_KEY=... node scripts/run-evals-live.mjs --mode review
  *   ANTHROPIC_API_KEY=... node scripts/run-evals-live.mjs --model claude-opus-4-6
+ *   ANTHROPIC_API_KEY=... node scripts/run-evals-live.mjs --max-tokens 8192
  */
 
 import { readFileSync } from "node:fs";
@@ -15,7 +16,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Anthropic from "@anthropic-ai/sdk";
 import { assembleSystemPrompt, VALID_MODES } from "./assemble-prompt.mjs";
-import { parseArgs } from "./cli-utils.mjs";
+import { parseArgs, parseMaxTokens, maxTokensError } from "./cli-utils.mjs";
 import { extractRiskCodes, classify } from "./eval-utils.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -26,10 +27,16 @@ const filterRisk = args.risk ?? null;
 const filterId   = args.id ? parseInt(args.id, 10) : null;
 const filterMode = args.mode ?? null;
 const model      = args.model ?? "claude-sonnet-4-6";
+const maxTokens  = parseMaxTokens(args["max-tokens"]);
 const skillsDir  = path.join(root, "skills");
 
 if (filterMode && !VALID_MODES.includes(filterMode)) {
   console.error(`Unknown mode: ${filterMode}. Valid modes: ${VALID_MODES.join(", ")}`);
+  process.exit(1);
+}
+
+if (maxTokens === null) {
+  console.error(maxTokensError(args["max-tokens"]));
   process.exit(1);
 }
 
@@ -77,7 +84,7 @@ for (const scenario of scenarios) {
   try {
     const message = await client.messages.create({
       model,
-      max_tokens: 4096,
+      max_tokens: maxTokens,
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
     });

@@ -452,6 +452,8 @@ jobs:
 
 brooks-lint 会把你的 diff 发送到这里填写的主机，因此只应指向你信任其接触源码的一方。自己运行 `scripts/ci-review.mjs` 完全不需要参数 —— Anthropic SDK 会直接读取 `ANTHROPIC_BASE_URL`。
 
+**输出上限。** `max-tokens: 8192` 可提高报告的输出 token 上限（默认 4096）。较长的 `sweep` 或 `health` 报告可能触及该上限，而截断会朝错误的方向出错：被截掉的诊断根本不会被统计，于是健康分反而*更高*，`fail-below` 闸门可能放过一次本该失败的运行。若报告在诊断中途截断，就把它调高。
+
 **成本：** 每次 PR 运行约 $0.05–0.15，取决于 diff 大小和模型。建议仅在 `pull_request` 事件上运行。
 
 ## 路线图

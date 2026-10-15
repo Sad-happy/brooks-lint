@@ -1,8 +1,8 @@
 /**
  * Unit tests for the scripts/ helpers: frontmatter parsing, prompt assembly,
- * history, eval classification, report parsing, SARIF export, CI gates, and the
- * parser-fidelity summarizer — plus an integration check that validate-repo.mjs
- * exits 0 against this repository.
+ * history, eval classification, report parsing, SARIF export, CI gates, CLI
+ * flag parsing, and the parser-fidelity summarizer — plus an integration check
+ * that validate-repo.mjs exits 0 against this repository.
  *
  * Run:  node scripts/validate-repo.test.mjs
  *
@@ -44,6 +44,7 @@ import { extractRiskCodes, classify } from "./eval-utils.mjs";
 import { parseFindings, countFindings, extractLocation, SOURCE_EXTENSIONS } from "./report-parse.mjs";
 import { reportToSarif } from "./sarif.mjs";
 import { severityBreached, isRegression } from "./ci-gate.mjs";
+import { parseArgs, parseMaxTokens, maxTokensError, DEFAULT_MAX_TOKENS } from "./cli-utils.mjs";
 import { summarize } from "./benchmark.mjs";
 import { versionRefs } from "./version-refs.mjs";
 import {
@@ -874,6 +875,40 @@ test("only a negative numeric delta is a regression", () => {
   assert.equal(isRegression(5), false);
   assert.equal(isRegression(null), false);
   assert.equal(isRegression(undefined), false);
+});
+
+// ── cli-utils: parseMaxTokens ──────────────────────────────────────────────
+
+console.log("\nparseMaxTokens");
+
+test("an absent flag falls back to the shared default", () => {
+  assert.equal(parseMaxTokens(undefined), DEFAULT_MAX_TOKENS);
+});
+
+test("a positive integer string is accepted", () => {
+  assert.equal(parseMaxTokens("8192"), 8192);
+  assert.equal(parseMaxTokens(" 8192 "), 8192);
+  assert.equal(parseMaxTokens("1"), 1);
+});
+
+test("a flag with no value of its own is rejected, not read as 1", () => {
+  // parseArgs yields the boolean true here; Number(true) is 1 and
+  // parseInt(true, 10) is NaN — both would silently reach the API.
+  const args = parseArgs(["--max-tokens", "--mode", "review"]);
+  assert.equal(args["max-tokens"], true);
+  assert.equal(parseMaxTokens(args["max-tokens"]), null);
+});
+
+test("non-integers, zero, and negatives are rejected", () => {
+  for (const bad of ["0", "-1", "4096.5", "1e4", "8k", "", "NaN", "0x10"]) {
+    assert.equal(parseMaxTokens(bad), null, `expected ${JSON.stringify(bad)} to be rejected`);
+  }
+});
+
+test("the error message names the flag and a usable value", () => {
+  assert.match(maxTokensError("8k"), /--max-tokens/);
+  assert.match(maxTokensError("8k"), new RegExp(String(DEFAULT_MAX_TOKENS)));
+  assert.match(maxTokensError(true), /no value given/);
 });
 
 // ── Parser-fidelity benchmark on the FROZEN real-report corpus ─────────────
