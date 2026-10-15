@@ -436,6 +436,8 @@ jobs:
 
 이 Action은 리뷰를 PR 댓글로 게시하며, 건강 점수가 임계값 아래로 떨어지면 선택적으로 체크를 실패시킵니다. `.brooks-lint-history.json`이 저장소에 커밋되어 있으면 댓글에 추세 변화도 포함됩니다（예: "85 → 82 (−3) over last 3 runs"）.
 
+**CI의 `mode: sweep`은 보고만 하고 수정을 적용하지는 않습니다.** 이 Action은 도구가 없는 API 호출을 한 번만 하므로 Full Sweep의 동의 게이트(Step 0), 파일 직접 수정, 반복 루프를 실행할 수 없습니다 — Fix Log와 Iteration History 섹션은 비어서 돌아오고, `.brooks-lint.yaml`의 `sweep.max_iterations`도 여기서는 작동하지 않습니다. 얻는 것은 스윕 자체가 아니라 스윕에 대한 설명입니다. 수정이 실제로 적용되길 원한다면 파일 도구가 있고 Step 0의 동의 프롬프트에 답할 수 있는 환경에서 `/brooks-sweep`을 대화형으로 실행하세요. 읽기 전용 5개 모드 — `review`, `audit`, `debt`, `test`, `health` — 는 CI에서도 로컬과 똑같이 동작합니다.
+
 **품질 게이트와 Code Scanning.** `fail-below` 외에도 이 Action은 다음을 제공합니다:
 
 ```yaml

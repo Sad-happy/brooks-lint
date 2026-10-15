@@ -438,6 +438,8 @@ See [`docs/github-action-example.yml`](docs/github-action-example.yml) for the f
 
 The action posts the review as a PR comment and optionally fails the check if the Health Score drops below a threshold. If `.brooks-lint-history.json` is committed to your repo, the comment also includes a trend delta (e.g., "85 → 82 (−3) over last 3 runs").
 
+**`mode: sweep` in CI reports but never applies fixes.** The action makes a single tool-less API call, so Full Sweep's consent gate (Step 0), its in-place file edits, and its iteration loop cannot run — the Fix Log and Iteration History sections come back empty, and `sweep.max_iterations` from `.brooks-lint.yaml` is inert here. What you get is a description of a sweep, not a sweep. For fixes that actually land, run `/brooks-sweep` interactively in a harness that has file tools and can answer the Step 0 consent prompt. The five read-only modes — `review`, `audit`, `debt`, `test`, `health` — behave in CI exactly as they do locally.
+
 **Quality gates and Code Scanning.** Beyond `fail-below`, the action exposes:
 
 ```yaml

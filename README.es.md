@@ -438,6 +438,8 @@ Consulta [`docs/github-action-example.yml`](docs/github-action-example.yml) para
 
 La action publica la revisión como un comentario del PR y, opcionalmente, hace fallar el check si la puntuación de salud cae por debajo de un umbral. Si `.brooks-lint-history.json` está confirmado en tu repositorio, el comentario también incluye un delta de tendencia (p. ej., "85 → 82 (−3) en las últimas 3 ejecuciones").
 
+**`mode: sweep` en CI informa, pero nunca aplica correcciones.** La action hace una única llamada a la API sin herramientas, así que la puerta de consentimiento del Full Sweep (Step 0), sus ediciones de archivos en el sitio y su bucle de iteración no pueden ejecutarse — las secciones Fix Log e Iteration History llegan vacías, y `sweep.max_iterations` de `.brooks-lint.yaml` aquí es inerte. Lo que obtienes es la descripción de un barrido, no un barrido. Para correcciones que se apliquen de verdad, ejecuta `/brooks-sweep` de forma interactiva en un entorno que tenga herramientas de archivos y pueda responder al prompt de consentimiento del Step 0. Los cinco modos de solo lectura —`review`, `audit`, `debt`, `test`, `health`— se comportan en CI igual que en local.
+
 **Gates de calidad y Code Scanning.** Más allá de `fail-below`, la action expone:
 
 ```yaml

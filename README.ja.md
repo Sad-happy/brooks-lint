@@ -438,6 +438,8 @@ jobs:
 
 この Action はレビューを PR コメントとして投稿し、必要に応じて健全性スコアがしきい値を下回った場合にチェックを失敗させます。`.brooks-lint-history.json` がリポジトリにコミットされていれば、コメントにはトレンドの差分も含まれます（例：「85 → 82（−3）、直近 3 回の実行」）。
 
+**CI の `mode: sweep` は報告するだけで、修正は一切適用しません。** この Action はツールを持たない API 呼び出しを 1 回だけ行うため、Full Sweep の同意ゲート（Step 0）、ファイルの直接編集、反復ループはいずれも実行できません — Fix Log と Iteration History のセクションは空のまま返り、`.brooks-lint.yaml` の `sweep.max_iterations` もここでは効きません。得られるのはスイープそのものではなく、スイープの説明です。実際に修正を適用したい場合は、ファイル操作ツールを備え、Step 0 の同意プロンプトに応答できる環境で `/brooks-sweep` を対話的に実行してください。読み取り専用の 5 モード — `review`、`audit`、`debt`、`test`、`health` — は CI でもローカルとまったく同じように動作します。
+
 **品質ゲートと Code Scanning。** `fail-below` に加えて、この Action は次を公開しています：
 
 ```yaml

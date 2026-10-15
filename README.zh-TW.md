@@ -427,6 +427,8 @@ jobs:
 
 該 Action 會把審查結果作為 PR 留言發布，並可在健康分跌破閾值時讓檢查失敗。若儲存庫中提交了 `.brooks-lint-history.json`，留言還會包含趨勢變化（如 "85 → 82（−3），近 3 次執行"）。
 
+**CI 中的 `mode: sweep` 只會診斷，絕不會套用修復。** 該 Action 只發起一次不帶工具的 API 呼叫，因此 Full Sweep 的同意閘門（Step 0）、就地改寫檔案與迭代迴圈都無法執行 —— Fix Log 與 Iteration History 兩節會是空的，`.brooks-lint.yaml` 裡的 `sweep.max_iterations` 在這裡同樣失效。你拿到的是一次清掃的描述，而不是一次清掃。要讓修復真正落地，請在具備檔案工具、能回答 Step 0 同意提示的環境中以互動方式執行 `/brooks-sweep`。五個唯讀模式 —— `review`、`audit`、`debt`、`test`、`health` —— 在 CI 中的表現與本機完全一致。
+
 **品質閘門與 Code Scanning。** 除 `fail-below` 外，該 Action 還提供：
 
 ```yaml
