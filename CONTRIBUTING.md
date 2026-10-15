@@ -115,6 +115,10 @@ Then run any of `/brooks-review`, `/brooks-audit`, `/brooks-debt`, `/brooks-test
   Critical findings into the description. (Yes, we review our own contributions with the tool
   we're building.)
 - Keep PRs focused — one decay-risk improvement or one eval addition per PR.
+- When documenting a new GitHub Action input, annotate the minimum version that accepts it
+  (`api-base-url: https://… # requires v1.6.0+`): the `uses:` pin in those examples names the
+  last release, which may predate the input, and GitHub answers an unsupported input with
+  `Unexpected input(s)` rather than an error.
 - If you're making a judgment call (e.g. moving a severity threshold from 🟡 to 🔴), explain the
   reasoning in the PR description.
 

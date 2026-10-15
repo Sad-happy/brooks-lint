@@ -424,10 +424,10 @@ jobs:
     permissions:
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: hyhmrright/brooks-lint/.github/actions/brooks-lint@v1.4.3
+      - uses: hyhmrright/brooks-lint/.github/actions/brooks-lint@v1.7.0
         with:
           mode: review
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -456,7 +456,7 @@ La action publica la revisión como un comentario del PR y, opcionalmente, hace 
 ```yaml
         with:
           mode: review
-          api-base-url: https://your-gateway.example.com
+          api-base-url: https://your-gateway.example.com  # requires v1.6.0+
           anthropic-api-key: ${{ secrets.GATEWAY_API_KEY }}
           model: gateway-model-id
 ```
