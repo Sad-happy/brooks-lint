@@ -461,57 +461,9 @@ jobs:
 
 brooks-lint는 여기에 지정한 호스트로 diff를 전송하므로, 소스 코드를 맡겨도 되는 곳만 지정하세요. `scripts/ci-review.mjs`를 직접 실행할 때는 플래그가 필요 없습니다 — Anthropic SDK가 `ANTHROPIC_BASE_URL`을 직접 읽습니다.
 
-**Amazon Bedrock의 Claude.** Bedrock은 [Anthropic Messages API](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-messages-api.html)를 네이티브로 제공하고, SDK가 이미 보내는 `x-api-key` 헤더를 그대로 받아들입니다. 따라서 위의 input 세 개가 통합의 전부입니다 — Bedrock 전용 SDK도, 새 클라이언트도, action 변경도 필요 없습니다. `api-base-url`을 두 엔드포인트 중 하나로 지정하세요:
+**Amazon Bedrock의 Claude.** Bedrock은 [Anthropic Messages API](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-messages-api.html)를 네이티브로 제공하므로 새 클라이언트가 필요 없습니다. `api-base-url`(action `v1.6.0` 이상)을 `https://bedrock-runtime.{region}.amazonaws.com/anthropic`으로 지정하고, `anthropic-api-key`에는 단기 [Bedrock API 키](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html)를 전달하세요 — 이 키는 OIDC로 assume한 역할에서 job 안에서 발급하므로, 장기 키를 시크릿에 보관할 필요가 없습니다. 역할 assume, 토큰 발급, 모델 id, 필요한 IAM 권한, `bedrock-mantle` 대체 엔드포인트까지 전체 배선은 [`docs/github-action-example.yml`](docs/github-action-example.yml)에 주석 처리된 스텝으로 들어 있습니다. 위의 신뢰 관련 주의도 그대로 유효합니다 — Bedrock에서는 diff가 당신이 지정한 리전의 당신 AWS 계정으로 갑니다.
 
-| 엔드포인트 | `api-base-url` |
-|---|---|
-| `bedrock-runtime` | `https://bedrock-runtime.{region}.amazonaws.com/anthropic` |
-| `bedrock-mantle` | `https://bedrock-mantle.{region}.api.aws/anthropic` |
-
-AWS는 신규 애플리케이션에 `bedrock-runtime`을 권장합니다 — AWS SDK 통합, IAM 인증, 호출 로깅을 갖춘 엔드포인트입니다. `bedrock-mantle`은 Anthropic 호환 표면으로, Bedrock API 키 인증과 Workspaces를 추가로 지원합니다. 어느 쪽이든 `anthropic-api-key`에는 [Bedrock API 키](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html)를 전달합니다. 최대 12시간 유효하고 발급한 자격 주체의 권한을 그대로 상속하는 단기 키를 OIDC로 assume한 역할에서 발급하면, 장기 키를 시크릿에 보관할 필요가 없습니다:
-
-```yaml
-# .github/workflows/brooks-lint-bedrock.yml
-jobs:
-  brooks-lint:
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write        # mint the OIDC token that assumes the AWS role
-      contents: read
-      pull-requests: write   # post the review comment
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::111122223333:role/brooks-lint-bedrock
-          aws-region: us-east-1
-      - id: bedrock
-        working-directory: ${{ runner.temp }}
-        shell: bash
-        run: |
-          npm install --no-save @aws/bedrock-token-generator
-          token=$(node --input-type=module -e '
-            import { getTokenProvider } from "@aws/bedrock-token-generator";
-            const provideToken = getTokenProvider();
-            process.stdout.write(await provideToken());
-          ')
-          echo "::add-mask::$token"   # keep it out of the log before it moves
-          echo "token=$token" >> "$GITHUB_OUTPUT"
-      - uses: hyhmrright/brooks-lint/.github/actions/brooks-lint@v1.4.3
-        with:
-          mode: review
-          api-base-url: https://bedrock-runtime.us-east-1.amazonaws.com/anthropic
-          anthropic-api-key: ${{ steps.bedrock.outputs.token }}
-          model: global.anthropic.claude-sonnet-5
-```
-
-토큰 생성기는 `configure-aws-credentials`가 내보낸 자격 증명과 리전을 읽으므로, 발급 스텝 자체에는 input이 필요 없습니다. SigV4는 그 발급에만 서명하고, 리뷰 호출 자체는 일반적인 `x-api-key` 요청입니다. `anthropic-version`은 SDK가 알아서 보냅니다. 모델 id는 `model`로 그대로 전달하세요 — `global.anthropic.claude-sonnet-5`, `us.anthropic.claude-sonnet-5`, `anthropic.claude-sonnet-5`.
-
-전제 조건은 두 가지이고, 둘 다 이 저장소 밖의 일입니다: 지정한 리전에서 해당 Claude 모델 접근이 활성화되어 있어야 하고(Bedrock 콘솔 → **Model access**), workflow가 assume할 수 있는 IAM 역할이 호출을 허용해야 합니다 — `bedrock:InvokeModel`과 `bedrock:CallWithBearerToken`, Mantle 엔드포인트에서는 `bedrock-mantle:CallWithBearerToken`. 발급된 토큰은 그 역할의 권한만 상속하므로, 역할이 곧 영향 범위 전체입니다.
-
-**이 방식으로는 fork에서 온 pull request를 리뷰할 수 없습니다.** GitHub은 fork의 `pull_request` 실행에 저장소 시크릿도 `id-token: write`도 부여하지 않으므로, 역할과 교환할 OIDC 토큰도 대신 쓸 저장된 키도 없고, job은 리뷰 대신 실패합니다. fork까지 커버하려면 다른 트리거(`pull_request_target` — 신뢰할 수 없는 브랜치를 대상으로 실행할 때 필요한 모든 주의를 기울여서)나 다른 키 공급원이 필요합니다. 위의 신뢰 관련 주의도 그대로 유효하며, Bedrock은 그것을 충족하는 한 가지 방법입니다. diff가 가는 곳은 당신이 선택한 리전의 당신 AWS 계정이기 때문입니다.
+**이 방식으로는 fork에서 온 pull request를 리뷰할 수 없습니다.** GitHub은 fork의 `pull_request` 실행에 저장소 시크릿도 `id-token: write`도 부여하지 않으므로, 역할과 교환할 OIDC 토큰도 대신 쓸 저장된 키도 없습니다. fork까지 커버하려면 다른 트리거(`pull_request_target` — 신뢰할 수 없는 브랜치를 대상으로 실행할 때 필요한 모든 주의를 기울여서)나 다른 키 공급원이 필요합니다.
 
 **비용:** PR 실행당 약 $0.05–0.15로, diff 크기와 모델에 따라 다릅니다. `pull_request` 이벤트에서만 실행할 것을 권장합니다.
 

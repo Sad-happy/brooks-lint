@@ -463,57 +463,9 @@ The action posts the review as a PR comment and optionally fails the check if th
 
 brooks-lint sends your diff to whatever host you name here, so only point it at one you trust with your source. Running `scripts/ci-review.mjs` yourself needs no flag at all — the Anthropic SDK reads `ANTHROPIC_BASE_URL` directly.
 
-**Claude on Amazon Bedrock.** Bedrock serves the [Anthropic Messages API](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-messages-api.html) natively and accepts the same `x-api-key` header the SDK already sends, so the three inputs above are the whole integration — no Bedrock SDK, no new client, nothing to change in the action. Point `api-base-url` at either endpoint:
+**Claude on Amazon Bedrock.** Bedrock serves the [Anthropic Messages API](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-messages-api.html) natively, so no new client is needed: point `api-base-url` (action `v1.6.0`+) at `https://bedrock-runtime.{region}.amazonaws.com/anthropic` and pass a short-term [Bedrock API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html) as `anthropic-api-key` — minted inside the job from an OIDC-assumed role, so no long-lived key sits in a secret. [`docs/github-action-example.yml`](docs/github-action-example.yml) carries the full wiring as commented steps: role assumption, token minting, model ids, the IAM permissions needed, and the `bedrock-mantle` alternative. The trust note above still applies — with Bedrock the diff goes to your own AWS account, in the Region you name.
 
-| Endpoint | `api-base-url` |
-|---|---|
-| `bedrock-runtime` | `https://bedrock-runtime.{region}.amazonaws.com/anthropic` |
-| `bedrock-mantle` | `https://bedrock-mantle.{region}.api.aws/anthropic` |
-
-AWS recommends `bedrock-runtime` for new applications — it is the endpoint with the AWS SDK integrations, IAM authentication and invocation logging. `bedrock-mantle` is the Anthropic-compatible surface and adds Bedrock API key authentication and Workspaces. Either way `anthropic-api-key` carries a [Bedrock API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html); mint a short-term one — good for up to 12 hours and inheriting the permissions of the identity that generated it — from an OIDC-assumed role, so no long-lived key ever sits in a secret:
-
-```yaml
-# .github/workflows/brooks-lint-bedrock.yml
-jobs:
-  brooks-lint:
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write        # mint the OIDC token that assumes the AWS role
-      contents: read
-      pull-requests: write   # post the review comment
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::111122223333:role/brooks-lint-bedrock
-          aws-region: us-east-1
-      - id: bedrock
-        working-directory: ${{ runner.temp }}
-        shell: bash
-        run: |
-          npm install --no-save @aws/bedrock-token-generator
-          token=$(node --input-type=module -e '
-            import { getTokenProvider } from "@aws/bedrock-token-generator";
-            const provideToken = getTokenProvider();
-            process.stdout.write(await provideToken());
-          ')
-          echo "::add-mask::$token"   # keep it out of the log before it moves
-          echo "token=$token" >> "$GITHUB_OUTPUT"
-      - uses: hyhmrright/brooks-lint/.github/actions/brooks-lint@v1.4.3
-        with:
-          mode: review
-          api-base-url: https://bedrock-runtime.us-east-1.amazonaws.com/anthropic
-          anthropic-api-key: ${{ steps.bedrock.outputs.token }}
-          model: global.anthropic.claude-sonnet-5
-```
-
-The token generator reads the credentials and Region that `configure-aws-credentials` exported, so the mint step takes no inputs of its own. SigV4 signs only that mint; the review call itself is an ordinary `x-api-key` request, and the SDK sends `anthropic-version` for you. Model ids pass through `model` unchanged — `global.anthropic.claude-sonnet-5`, `us.anthropic.claude-sonnet-5`, `anthropic.claude-sonnet-5`.
-
-Two prerequisites, both outside this repo: access to that Claude model enabled in the Region you name (Bedrock console → **Model access**), and an IAM role your workflow is allowed to assume whose policy permits the invocation — `bedrock:InvokeModel` plus `bedrock:CallWithBearerToken`, or `bedrock-mantle:CallWithBearerToken` on the Mantle endpoint. The minted token inherits that role and nothing more, so the role is the whole blast radius.
-
-**This path cannot review pull requests from forks.** GitHub grants a forked `pull_request` run neither repository secrets nor `id-token: write`, so there is no OIDC token to exchange for the role and no stored key to fall back on — the job fails instead of reviewing. Fork coverage needs a different trigger (`pull_request_target`, with all the care that running against untrusted branches demands) or a different key source. And the trust note above still holds; Bedrock is one way to satisfy it, since the diff goes to your own AWS account in the Region you picked.
+**This path cannot review pull requests from forks.** GitHub grants a forked `pull_request` run neither repository secrets nor `id-token: write`, so there is no OIDC token to exchange for the role and no stored key to fall back on. Fork coverage needs a different trigger (`pull_request_target`, with all the care that running against untrusted branches demands) or a different key source.
 
 **Cost:** ~$0.05–0.15 per PR run depending on diff size and model. Recommend running on `pull_request` events only.
 

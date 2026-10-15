@@ -463,57 +463,9 @@ La action publica la revisión como un comentario del PR y, opcionalmente, hace 
 
 brooks-lint envía tu diff al host que indiques aquí, así que apúntalo solo a uno en el que confíes con tu código fuente. Ejecutar `scripts/ci-review.mjs` por tu cuenta no necesita ninguna opción: el SDK de Anthropic lee `ANTHROPIC_BASE_URL` directamente.
 
-**Claude en Amazon Bedrock.** Bedrock sirve la [API de mensajes de Anthropic](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-messages-api.html) de forma nativa y acepta la misma cabecera `x-api-key` que el SDK ya envía, así que los tres inputs de arriba son toda la integración: sin SDK de Bedrock, sin cliente nuevo, sin cambiar nada en la action. Apunta `api-base-url` a cualquiera de los dos endpoints:
+**Claude en Amazon Bedrock.** Bedrock sirve la [API de mensajes de Anthropic](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-messages-api.html) de forma nativa, así que no hace falta ningún cliente nuevo: apunta `api-base-url` (action `v1.6.0`+) a `https://bedrock-runtime.{region}.amazonaws.com/anthropic` y pasa como `anthropic-api-key` una [clave de API de Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html) de corta duración, generada dentro del propio job desde un rol asumido por OIDC, para que ninguna clave de larga duración quede guardada en un secreto. El cableado completo está en [`docs/github-action-example.yml`](docs/github-action-example.yml) como pasos comentados: asumir el rol, generar el token, los ids de modelo, los permisos de IAM necesarios y la alternativa `bedrock-mantle`. La nota de confianza de arriba sigue aplicando: con Bedrock el diff va a tu propia cuenta de AWS, en la Región que indiques.
 
-| Endpoint | `api-base-url` |
-|---|---|
-| `bedrock-runtime` | `https://bedrock-runtime.{region}.amazonaws.com/anthropic` |
-| `bedrock-mantle` | `https://bedrock-mantle.{region}.api.aws/anthropic` |
-
-AWS recomienda `bedrock-runtime` para aplicaciones nuevas: es el endpoint con las integraciones del SDK de AWS, autenticación IAM y registro de invocaciones. `bedrock-mantle` es la superficie compatible con Anthropic y añade autenticación por clave de API de Bedrock y Workspaces. En ambos casos `anthropic-api-key` lleva una [clave de API de Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html); genera una de corta duración —válida hasta 12 horas y que hereda los permisos de la identidad que la generó— desde un rol asumido por OIDC, para que ninguna clave de larga duración quede guardada en un secreto:
-
-```yaml
-# .github/workflows/brooks-lint-bedrock.yml
-jobs:
-  brooks-lint:
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write        # mint the OIDC token that assumes the AWS role
-      contents: read
-      pull-requests: write   # post the review comment
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::111122223333:role/brooks-lint-bedrock
-          aws-region: us-east-1
-      - id: bedrock
-        working-directory: ${{ runner.temp }}
-        shell: bash
-        run: |
-          npm install --no-save @aws/bedrock-token-generator
-          token=$(node --input-type=module -e '
-            import { getTokenProvider } from "@aws/bedrock-token-generator";
-            const provideToken = getTokenProvider();
-            process.stdout.write(await provideToken());
-          ')
-          echo "::add-mask::$token"   # keep it out of the log before it moves
-          echo "token=$token" >> "$GITHUB_OUTPUT"
-      - uses: hyhmrright/brooks-lint/.github/actions/brooks-lint@v1.4.3
-        with:
-          mode: review
-          api-base-url: https://bedrock-runtime.us-east-1.amazonaws.com/anthropic
-          anthropic-api-key: ${{ steps.bedrock.outputs.token }}
-          model: global.anthropic.claude-sonnet-5
-```
-
-El generador de tokens lee las credenciales y la Región que exportó `configure-aws-credentials`, así que el paso de generación no necesita inputs propios. SigV4 firma solo esa generación; la llamada de revisión en sí es una petición `x-api-key` normal, y el SDK envía `anthropic-version` por ti. Los ids de modelo pasan por `model` sin cambios: `global.anthropic.claude-sonnet-5`, `us.anthropic.claude-sonnet-5`, `anthropic.claude-sonnet-5`.
-
-Dos requisitos previos, ambos fuera de este repositorio: tener habilitado el acceso a ese modelo de Claude en la Región que indiques (consola de Bedrock → **Model access**) y un rol de IAM que tu workflow pueda asumir cuya política permita la invocación: `bedrock:InvokeModel` más `bedrock:CallWithBearerToken`, o `bedrock-mantle:CallWithBearerToken` en el endpoint de Mantle. El token generado hereda ese rol y nada más, así que el rol es todo el radio de impacto.
-
-**Esta vía no puede revisar pull requests desde forks.** GitHub no concede a una ejecución `pull_request` desde un fork ni los secretos del repositorio ni `id-token: write`, así que no hay token OIDC que canjear por el rol ni clave guardada a la que recurrir: el job falla en lugar de revisar. Cubrir los forks exige otro disparador (`pull_request_target`, con todo el cuidado que exige ejecutar sobre ramas no confiables) u otra fuente de clave. Y la nota de confianza de arriba sigue aplicando; Bedrock es una forma de satisfacerla, porque el diff va a tu propia cuenta de AWS, en la Región que elegiste.
+**Esta vía no puede revisar pull requests desde forks.** GitHub no concede a una ejecución `pull_request` desde un fork ni los secretos del repositorio ni `id-token: write`, así que no hay token OIDC que canjear por el rol ni clave guardada a la que recurrir. Cubrir los forks exige otro disparador (`pull_request_target`, con todo el cuidado que exige ejecutar sobre ramas no confiables) u otra fuente de clave.
 
 **Coste:** ~$0,05–0,15 por ejecución de PR, según el tamaño del diff y el modelo. Se recomienda ejecutar solo en eventos `pull_request`.
 
