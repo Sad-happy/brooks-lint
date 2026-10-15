@@ -21,6 +21,12 @@ inputs:
   sarif-file:
     description: "Path to write a SARIF report for GitHub Code Scanning (empty = skip SARIF)"
     default: ""
+  config-ref:
+    description: >-
+      Where to read .brooks-lint.yaml from: "base" (default — the PR's base branch,
+      so a PR cannot weaken the policy that reviews it) or "head" (the checkout,
+      for teams whose config file is CODEOWNERS-protected)
+    default: "base"
   model:
     description: "Claude model to use"
     default: "claude-sonnet-4-6"
@@ -78,7 +84,18 @@ runs:
         SARIF_FILE: ${{ inputs.sarif-file }}
         MODE: ${{ inputs.mode }}
         MODEL: ${{ inputs.model }}
+        CONFIG_REF: ${{ inputs.config-ref }}
       run: |
+        # Validated here as well as in the script so a typo fails before the API
+        # call is paid for. Matched as a shell value, never interpolated into the
+        # body — see the Check Threshold step for why.
+        case "$CONFIG_REF" in
+          base|head) ;;
+          *)
+            echo "config-ref must be 'base' or 'head' (got: $CONFIG_REF)"
+            exit 1
+            ;;
+        esac
         # Exported only when the input is set: naming ANTHROPIC_BASE_URL in the
         # env block above would blank out one inherited from the job env. The
         # SDK reads the variable itself, so nothing downstream needs a flag.
@@ -94,6 +111,7 @@ runs:
           --model "$MODEL" \
           --skills-dir "$BROOKS_LINT_ROOT/skills" \
           --project-dir "$GITHUB_WORKSPACE" \
+          --config-ref "$CONFIG_REF" \
           "${sarif_arg[@]}" \
           > brooks-lint-report.json
 

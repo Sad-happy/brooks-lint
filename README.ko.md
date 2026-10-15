@@ -227,7 +227,7 @@ graph TD
 
 **점수 결정성** — 고정된 진단 집합（2 Critical / 3 Warning / 1 Suggestion）에 대해, strictness 프리셋은 각자의 `common.md` 표가 예측하는 점수를 정확히 산출합니다: strict **34**, balanced **54**, legacy-friendly **74** — 그리고 `legacy-friendly`만이 상위 세 개의 수정으로 시작합니다.
 
-**모델 품질** — 모델이 실제 코드에서 *올바른* 위험을 찾아내는지는 **57개 시나리오 eval 스위트**（`evals/evals.json`）로 측정합니다: `npm run evals`（구조 검증）와 `npm run evals:live`（실측, `ANTHROPIC_API_KEY` 필요）.
+**모델 품질** — 모델이 실제 코드에서 *올바른* 위험을 찾아내는지는 **58개 시나리오 eval 스위트**（`evals/evals.json`）로 측정합니다: `npm run evals`（구조 검증）와 `npm run evals:live`（실측, `ANTHROPIC_API_KEY` 필요）.
 
 > 범위와 정직성: 파서 수치는 결정론적이며 정확히 재현됩니다. strictness 및 eval 스위트 수치는 모델에 대한 단일 실행 실측치로, 실행마다 약간씩 변동합니다. 파서 벤치마크는 보고서 파싱 충실도（도구가 보고서에 기재된 모든 진단을 읽어내는가?）를 측정하는 것이지, 특정 진단이 "옳은지"를 측정하는 것이 아닙니다. 심각도 카운트 일치가 완전히 독립적인 신호입니다; 위험 코드 일치는 공유된 표준 name→code 범례 또한 반영합니다.
 
@@ -401,7 +401,7 @@ brooks-lint/
 │   └── brooks-sweep/     # 모드 6: 전면 스윕          → sweep-guide.md
 ├── hooks/                # SessionStart 훅
 ├── commands/             # 짧은 명령 래퍼（훅이 자동 설치）
-├── evals/                # 57 시나리오 eval 스위트 + 동결된 파서 충실도 코퍼스
+├── evals/                # 58 시나리오 eval 스위트 + 동결된 파서 충실도 코퍼스
 └── assets/               # 로고, 배너, 데모
 ```
 
@@ -448,6 +448,15 @@ jobs:
 ```
 
 `fail-on-regression`은 `.brooks-lint-history.json`을 읽으므로, "새로운 회귀 없음"을 강제하려면 그 파일을 커밋하세요. `sarif-file`을 설정하면 진단이 PR의 **Files changed** 탭에 인라인으로 나타나며, job에 `security-events: write` 권한이 필요합니다.
+
+**CI의 프로젝트 설정.** action은 `.brooks-lint.yaml`(`strictness`, `disable`, `focus`, `severity`, `ignore`, `custom_risks`)을 적용하며, PR 체크아웃이 아니라 **base 브랜치**에서 읽습니다. 따라서 pull request가 자신을 리뷰하는 정책을 약화시킬 수 없습니다. 모든 위험을 비활성화하는 diff라면 그 설정 변경이 승인되기도 전에 점수 100으로 `fail-below`를 통과했을 것입니다. PR이 처음 추가한 설정도 같은 이유로 머지된 뒤에 적용됩니다. 리포트의 `Config:` 줄에는 사용한 출처(예: `applied from base (main)`)가 표시됩니다. 이를 위해서는 클론에 base 객체가 있어야 하므로 템플릿이 `fetch-depth: 0`으로 체크아웃합니다. 얕은 클론에서는 체크아웃된 파일로 폴백하고 그 사실을 알립니다. PR 자체의 사본을 쓰려면 `config-ref: head`를 설정하세요 — `.brooks-lint.yaml`이 CODEOWNERS로 보호되어 있고 설정 변경이 그것을 제안한 PR에서 바로 적용되어야 할 때 적합합니다:
+
+```yaml
+        with:
+          mode: review
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          config-ref: base   # base (default) | head
+```
 
 **사용자 지정 API 엔드포인트.** `api-base-url`을 지정하면 action이 `api.anthropic.com` 대신 Anthropic 호환 `/v1/messages` 엔드포인트(자체 호스팅 프록시, LLM 게이트웨이, 리전 미러)를 호출합니다. 해당 엔드포인트의 키를 `anthropic-api-key`로, 기대하는 모델 id를 `model`로 전달하세요:
 

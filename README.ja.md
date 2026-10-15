@@ -228,7 +228,7 @@ graph TD
 
 **スコアリングの決定論性** — 固定された指摘集合（2 Critical / 3 Warning / 1 Suggestion）に対し、厳格度プリセットは `common.md` の表が予測する通りのスコアを正確に算出します：strict **34**、balanced **54**、legacy-friendly **74**——そして上位三件の修正を先頭に示すのは `legacy-friendly` だけです。
 
-**モデル品質** — モデルが実際のコードで*正しい*リスクを見つけられるかは、**57 シナリオの eval スイート**（`evals/evals.json`）で測定されます：`npm run evals`（構造）と `npm run evals:live`（ライブ、`ANTHROPIC_API_KEY` が必要）。
+**モデル品質** — モデルが実際のコードで*正しい*リスクを見つけられるかは、**58 シナリオの eval スイート**（`evals/evals.json`）で測定されます：`npm run evals`（構造）と `npm run evals:live`（ライブ、`ANTHROPIC_API_KEY` が必要）。
 
 > 範囲と誠実さについて：パーサーの数値は決定論的で、正確に再現可能です。厳格度と eval スイートの数値はモデルに対する単発のライブ測定で、実行ごとにわずかに変動します。パーサーのベンチマークが測るのはレポート解析の忠実度（ツールはレポートに書かれたすべての指摘を読み取れるか）であって、ある指摘が「正しい」かどうかではありません。重大度カウントの一致は完全に独立したシグナルです。リスクコードの一致は、共有された正規の name→code 凡例も反映しています。
 
@@ -403,7 +403,7 @@ brooks-lint/
 │   └── brooks-sweep/     # モード 6：全面スイープ         → sweep-guide.md
 ├── hooks/                # SessionStart フック
 ├── commands/             # 短縮コマンドのラッパー（フックが自動インストール）
-├── evals/                # 57 シナリオの eval スイート + 凍結されたパーサー忠実度コーパス
+├── evals/                # 58 シナリオの eval スイート + 凍結されたパーサー忠実度コーパス
 └── assets/               # ロゴ、バナー、デモ
 ```
 
@@ -450,6 +450,15 @@ jobs:
 ```
 
 `fail-on-regression` は `.brooks-lint-history.json` を読み取るため、そのファイルをコミットすれば「新たな回帰なし」を強制できます。`sarif-file` を設定すると、指摘が PR の **Files changed** タブにインラインで表示されるようになり、ジョブに `security-events: write` 権限が必要になります。
+
+**CI でのプロジェクト設定。** action は `.brooks-lint.yaml`（`strictness`、`disable`、`focus`、`severity`、`ignore`、`custom_risks`）を適用します。読み取り元は PR のチェックアウトではなく**ベースブランチ**です。そのため pull request が自分をレビューするポリシーを緩めることはできません。すべてのリスクを無効化する diff があれば、設定変更が承認される前にスコア 100 で `fail-below` を通過してしまいます。PR が初めて追加した設定も、同じ理由でマージ後に有効になります。レポートの `Config:` 行には使用した出所（例：`applied from base (main)`）が示されます。これはクローンにベース側のオブジェクトがあることを前提とするため、テンプレートは `fetch-depth: 0` でチェックアウトしています。シャロークローンではチェックアウト済みのファイルにフォールバックし、その旨を明記します。PR 自身のコピーを使うには `config-ref: head` を設定してください —— `.brooks-lint.yaml` が CODEOWNERS で保護されており、設定変更をその PR 内で有効にしたい場合に適しています：
+
+```yaml
+        with:
+          mode: review
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          config-ref: base   # base (default) | head
+```
 
 **カスタム API エンドポイント。** `api-base-url` を指定すると、action は `api.anthropic.com` ではなく Anthropic 互換の `/v1/messages` エンドポイント（自前のプロキシ、LLM ゲートウェイ、リージョンミラーなど）を呼び出します。そのエンドポイントのキーを `anthropic-api-key` に、期待されるモデル id を `model` に渡してください：
 

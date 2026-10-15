@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # needed for git diff main...HEAD
+          fetch-depth: 0  # needed for git diff main...HEAD and to read .brooks-lint.yaml from the base ref
 
       # Pin to a release tag. `@main` would silently re-point at unreviewed
       # changes on every run — including the Anthropic SDK version the action
@@ -25,6 +25,12 @@ jobs:
           mode: review
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           fail-below: 70  # fail the check if Health Score drops below 70
+          # .brooks-lint.yaml is read from the base ref by default, so a pull request
+          # cannot weaken the policy that reviews it (disabling every risk would score
+          # 100 and pass the gate before the config change was ever approved). Set
+          # `head` only if that file is CODEOWNERS-protected and config changes should
+          # take effect in the PR that makes them.
+          # config-ref: base             # where to read .brooks-lint.yaml from (base | head)
           # fail-on: critical            # fail on any Critical finding (none | warning | critical)
           # fail-on-regression: true     # fail if the Health Score dropped vs the last run
           # sarif-file: brooks-lint.sarif  # also upload findings to GitHub Code Scanning

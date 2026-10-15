@@ -58,7 +58,7 @@ head-to-head against an unaided review — not this suite's pass rate.)
 }
 ```
 
-Use the next sequential `id` after the last entry in `evals/evals.json` (currently 57 scenarios). The `mode` field is required — use one of: `"review"`, `"audit"`, `"debt"`, `"test"`, `"health"`, `"sweep"`.
+Use the next sequential `id` after the last entry in `evals/evals.json` (currently 58 scenarios). The `mode` field is required — use one of: `"review"`, `"audit"`, `"debt"`, `"test"`, `"health"`, `"sweep"`.
 
 Optional flags for special scenarios:
 - `"no_risk_codes": true` — for false-positive scenarios where no risk codes should appear in output

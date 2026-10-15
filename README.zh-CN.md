@@ -226,7 +226,7 @@ graph TD
 
 **打分确定性** —— 给定一组固定发现（2 Critical / 3 Warning / 1 Suggestion），三个 strictness 预设产出的分数与其 `common.md` 表的预测分毫不差：strict **34**、balanced **54**、legacy-friendly **74**——且只有 `legacy-friendly` 会优先列出前三高杠杆修复。
 
-**模型质量** —— 模型能否在真实代码上找到*正确的*风险，由 **57 场景 eval 套件**（`evals/evals.json`）衡量：`npm run evals`（结构校验）与 `npm run evals:live`（实测，需 `ANTHROPIC_API_KEY`）。
+**模型质量** —— 模型能否在真实代码上找到*正确的*风险，由 **58 场景 eval 套件**（`evals/evals.json`）衡量：`npm run evals`（结构校验）与 `npm run evals:live`（实测，需 `ANTHROPIC_API_KEY`）。
 
 > 范围与诚实说明：parser 数字是确定性的、可精确复算；strictness 与 eval 套件的数字是对模型的单次实测，会有轻微跑动差异。parser 基准衡量的是报告解析保真度（工具是否读出了报告里写的每条发现），而非某条发现"是否正确"。严重度计数吻合是完全独立的信号；风险码一致性还反映了 parser 与 grader 共用同一套权威 name→code 映射。
 
@@ -392,7 +392,7 @@ brooks-lint/
 │   └── brooks-sweep/     # 模式 6：全面扫描     → sweep-guide.md
 ├── hooks/                # SessionStart 钩子
 ├── commands/             # 短命令包装（由钩子自动安装）
-├── evals/                # 57 场景评测套件 + 冻结的 parser 保真度语料
+├── evals/                # 58 场景评测套件 + 冻结的 parser 保真度语料
 └── assets/               # logo、banner、demo
 ```
 
@@ -439,6 +439,15 @@ jobs:
 ```
 
 `fail-on-regression` 读取 `.brooks-lint-history.json`，因此提交该文件即可强制"无新增回归"。设置 `sarif-file` 会让诊断直接显示在 PR 的 **Files changed** 标签页，并需要 job 具备 `security-events: write` 权限。
+
+**CI 中的项目配置。** action 会应用你的 `.brooks-lint.yaml`（`strictness`、`disable`、`focus`、`severity`、`ignore`、`custom_risks`），并且从 **base 分支**读取，而不是从 PR 的 checkout 读取。因此 pull request 无法削弱审查它自己的策略：若某个 diff 禁用了所有风险，它本会在该配置变更获批之前就拿到 100 分并通过 `fail-below`。同理，PR 首次新增的配置也要等合并后才生效。报告中的 `Config:` 行会写明所用来源（例如 `applied from base (main)`）。这需要克隆中存在 base 侧的对象，所以模板使用 `fetch-depth: 0` 执行 checkout；在浅克隆下 action 会回退到已 checkout 的文件，并如实说明。设置 `config-ref: head` 可改用 PR 自己的副本 —— 适用于 `.brooks-lint.yaml` 已受 CODEOWNERS 保护、且希望配置变更在提出它的 PR 中即刻生效的情况：
+
+```yaml
+        with:
+          mode: review
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          config-ref: base   # base (default) | head
+```
 
 **自定义 API 端点。** `api-base-url` 让 action 改为调用任意 Anthropic 兼容的 `/v1/messages` 端点 —— 自建代理、LLM 网关或区域镜像 —— 而不是 `api.anthropic.com`。把该端点的密钥作为 `anthropic-api-key` 传入，把它期望的模型 id 作为 `model` 传入：
 
