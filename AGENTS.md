@@ -35,3 +35,10 @@ This repository is an AI-powered code quality tool grounded in twelve classic en
 
 ---
 **Note:** Codex CLI should prioritize instructions found in `AGENTS.md` when operating in this repository.
+
+## Mandatory Commit and Push
+
+- After completing any code, documentation, or configuration change, run the applicable checks, commit all task-owned changes, and push the commit to the current branch's remote before handing off. This is standing authorization; do not ask for confirmation each time.
+- Preserve unrelated uncommitted changes and exclude them from the commit. Never force-push.
+- If checks, commit, or push fail, report the failure clearly; do not claim completion or bypass checks.
+- Creating tags and publishing releases still require an explicit release request.
