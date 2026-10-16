@@ -442,7 +442,7 @@ jobs:
 
 `fail-on-regression` 读取 `.brooks-lint-history.json`，因此提交该文件即可强制"无新增回归"。设置 `sarif-file` 会让诊断直接显示在 PR 的 **Files changed** 标签页，并需要 job 具备 `security-events: write` 权限。
 
-**CI 中的项目配置。** action 会应用你的 `.brooks-lint.yaml`（`strictness`、`disable`、`focus`、`severity`、`ignore`、`custom_risks`），并且从 **base 分支**读取，而不是从 PR 的 checkout 读取。因此 pull request 无法削弱审查它自己的策略：若某个 diff 禁用了所有风险，它本会在该配置变更获批之前就拿到 100 分并通过 `fail-below`。同理，PR 首次新增的配置也要等合并后才生效。报告中的 `Config:` 行会写明所用来源（例如 `applied from base (main)`）。这需要克隆中存在 base 侧的对象，所以模板使用 `fetch-depth: 0` 执行 checkout；在浅克隆下 action 会回退到已 checkout 的文件，并如实说明。设置 `config-ref: head` 可改用 PR 自己的副本 —— 适用于 `.brooks-lint.yaml` 已受 CODEOWNERS 保护、且希望配置变更在提出它的 PR 中即刻生效的情况：
+**CI 中的项目配置。** action 会应用你的 `.brooks-lint.yaml`（`strictness`、`disable`、`focus`、`severity`、`ignore`、`custom_risks`），并且从 **base 分支**读取，而不是从 PR 的 checkout 读取。因此 pull request 无法削弱审查它自己的策略：若某个 diff 禁用了所有风险，它本会在该配置变更获批之前就拿到 100 分并通过 `fail-below`。同理，PR 首次新增的配置也要等合并后才生效。报告中的 `Config:` 行会写明所用来源（例如 `applied from base (main)`）。这需要克隆中存在 base 侧的对象，所以模板使用 `fetch-depth: 0` 执行 checkout；在 PR 中，如果缺少 base 引用，action 会报错并提示使用 `fetch-depth: 0`，绝不会回退到 PR 自己的策略。在非 PR 场景（包括本地运行）中，如果无法读取 base 引用，则会回退到工作区配置，并明确注明来源。设置 `config-ref: head` 可改用 PR 自己的副本 —— 适用于 `.brooks-lint.yaml` 已受 CODEOWNERS 保护、且希望配置变更在提出它的 PR 中即刻生效的情况：
 
 ```yaml
         with:

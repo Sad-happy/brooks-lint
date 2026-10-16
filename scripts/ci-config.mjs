@@ -112,9 +112,10 @@ function readWorkingTreeFile(projectDir, filename) {
 /**
  * Resolve the project config for a CI run.
  *
- * Never throws: a missing base object, a repo without git, or no config at all
- * all resolve to a usable answer. The readers are injectable so the resolution
- * order can be tested without a fixture repository.
+ * Throws when a PR base is unavailable: unreviewed working-tree policy must
+ * never substitute for the trusted base. Non-PR runs may use the working tree.
+ * The readers are injectable so resolution order can be tested without a
+ * fixture repository.
  *
  * @returns {{content: string|null, provenance: string|null, attempted: string[]}}
  *   `content` is the raw YAML (null when there is none) and `provenance` is the
@@ -146,12 +147,20 @@ export function loadProjectConfig({
   // not a gap — run on defaults rather than picking up the PR's own file.
   if (baseResolved) return { content: null, provenance: null, attempted };
 
+  if (configRef === "base" && (env.GITHUB_BASE_REF ?? "").trim()) {
+    throw new Error(
+      `Cannot read the PR base config: none of ${attempted.join(", ")} resolves. ` +
+      "Use actions/checkout with fetch-depth: 0 (or fetch the base branch). " +
+      "Set config-ref: head only to explicitly accept the checkout's policy.",
+    );
+  }
+
   attempted.push("the working tree");
   const content = readFile(projectDir, CONFIG_FILENAME);
   if (content === null) return { content: null, provenance: null, attempted };
 
   // Reaching the working tree with configRef "base" means no base object was
-  // readable — a shallow clone, a scheduled run, or a local invocation. Say so
+  // readable outside a PR — a scheduled run or a local invocation. Say so
   // in the provenance rather than claiming the config came from the base ref.
   return {
     content,

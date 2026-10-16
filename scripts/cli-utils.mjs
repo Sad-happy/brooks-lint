@@ -26,7 +26,7 @@ export function parseMaxTokens(raw) {
   // Digits only: rejects the boolean `true`, negatives, decimals, "1e4", "8k".
   if (typeof raw !== "string" || !/^\d+$/.test(raw.trim())) return null;
   const value = parseInt(raw.trim(), 10);
-  return value > 0 ? value : null;
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
 /** The message both scripts print for a --max-tokens value parseMaxTokens rejected. */

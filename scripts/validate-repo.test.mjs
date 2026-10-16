@@ -925,6 +925,12 @@ test("non-integers, zero, and negatives are rejected", () => {
   }
 });
 
+test("unsafe or overflowing token ceilings are rejected before the API call", () => {
+  for (const raw of ["9007199254740992", "9007199254740993", "9".repeat(400)]) {
+    assert.equal(parseMaxTokens(raw), null, `unsafe ceiling: ${raw}`);
+  }
+});
+
 test("the error message names the flag and a usable value", () => {
   assert.match(maxTokensError("8k"), /--max-tokens/);
   assert.match(maxTokensError("8k"), new RegExp(String(DEFAULT_MAX_TOKENS)));
@@ -1382,7 +1388,8 @@ function withStagedRelease({ version, section, subject, tagIt = false }, check) 
 
     // The tag lands BEFORE the commit under audit. Tagging HEAD instead would
     // collapse the range to nothing and the fixture would prove nothing.
-    if (tagIt) git("tag", `v${version}`);
+    // Isolate the synthetic range from real unreleased PR merges in the clone.
+    git("tag", tagIt ? `v${version}` : "v9.9.8");
 
     if (subject !== undefined) {
       writeFileSync(path.join(dir, "released.txt"), subject);
@@ -2221,19 +2228,27 @@ test("loadProjectConfig runs on defaults when the base ref has no config", () =>
   assert.equal(loaded.provenance, null);
 });
 
-test("loadProjectConfig falls back to the working tree when the base object is absent", () => {
-  // A shallow actions/checkout fetches only the merge commit — the base ref
-  // simply is not there, and that must not crash the run.
-  const loaded = loadProjectConfig({
+test("loadProjectConfig refuses unreviewed policy when the PR base is absent", () => {
+  assert.throws(() => loadProjectConfig({
     projectDir: "/repo",
     env: { GITHUB_BASE_REF: "main" },
+    refExists: () => false,
+    showRef: () => null,
+    readFile: () => { throw new Error("must not read PR policy"); },
+  }), /Cannot read the PR base config:.*fetch-depth: 0/);
+});
+
+test("loadProjectConfig keeps working-tree fallback outside a PR", () => {
+  const loaded = loadProjectConfig({
+    projectDir: "/repo",
+    env: {},
     refExists: () => false,
     showRef: () => null,
     readFile: treeReader("strictness: legacy-friendly\n"),
   });
   assert.equal(loaded.content, "strictness: legacy-friendly\n");
   assert.equal(loaded.provenance, "working tree (no base ref available)");
-  assert.deepEqual(loaded.attempted, ["origin/main", "main", "the working tree"]);
+  assert.deepEqual(loaded.attempted, ["origin/main", "main", "origin/master", "master", "the working tree"]);
 });
 
 test("loadProjectConfig with config-ref head never consults a git ref", () => {

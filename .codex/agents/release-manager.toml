@@ -15,7 +15,7 @@ Execute the repo's release procedure (the `release` skill codifies it — read `
    with step 5.
 2. **Propagate.** `npm run bump` — writes the version into `.claude-plugin/plugin.json`,
    `.claude-plugin/marketplace.json`, `.codex-plugin/plugin.json`,
-   `gemini-extension.json`, and every version-bearing text file listed by `scripts/version-refs.mjs` (all six README badges + the docs landing-page JSON-LD). It reads the version FROM package.json
+   `gemini-extension.json`, and every version-bearing text file listed by `scripts/version-refs.mjs` (all six README badges and action `uses:` pins, the docs landing-page JSON-LD, and `docs/github-action-example.yml`). It reads the version FROM package.json
    and does NOT touch the changelog.
 3. **Write the changelog.** Add a `## [<version>] - YYYY-MM-DD` section at the top of CHANGELOG.md
    with Added / Fixed / Changed notes summarizing `git log <last-tag>..HEAD --oneline`.

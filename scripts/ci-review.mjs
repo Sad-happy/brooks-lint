@@ -112,7 +112,13 @@ const { diff, scope } = getGitDiff(projectDir);
 // assembleSystemPrompt(): that function is shared with run-evals-live.mjs and
 // stays a pure function of (mode, skillsDir), and a system block keeps policy
 // out of the user message, which carries the untrusted diff.
-const projectConfig = loadProjectConfig({ projectDir, configRef });
+let projectConfig;
+try {
+  projectConfig = loadProjectConfig({ projectDir, configRef });
+} catch (err) {
+  console.error(JSON.stringify({ error: err.message, mode, scope }, null, 2));
+  process.exit(1);
+}
 
 if (projectConfig.content) {
   const sizeError = configSizeError(projectConfig.content);

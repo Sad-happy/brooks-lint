@@ -453,7 +453,7 @@ jobs:
 
 `fail-on-regression` は `.brooks-lint-history.json` を読み取るため、そのファイルをコミットすれば「新たな回帰なし」を強制できます。`sarif-file` を設定すると、指摘が PR の **Files changed** タブにインラインで表示されるようになり、ジョブに `security-events: write` 権限が必要になります。
 
-**CI でのプロジェクト設定。** action は `.brooks-lint.yaml`（`strictness`、`disable`、`focus`、`severity`、`ignore`、`custom_risks`）を適用します。読み取り元は PR のチェックアウトではなく**ベースブランチ**です。そのため pull request が自分をレビューするポリシーを緩めることはできません。すべてのリスクを無効化する diff があれば、設定変更が承認される前にスコア 100 で `fail-below` を通過してしまいます。PR が初めて追加した設定も、同じ理由でマージ後に有効になります。レポートの `Config:` 行には使用した出所（例：`applied from base (main)`）が示されます。これはクローンにベース側のオブジェクトがあることを前提とするため、テンプレートは `fetch-depth: 0` でチェックアウトしています。シャロークローンではチェックアウト済みのファイルにフォールバックし、その旨を明記します。PR 自身のコピーを使うには `config-ref: head` を設定してください —— `.brooks-lint.yaml` が CODEOWNERS で保護されており、設定変更をその PR 内で有効にしたい場合に適しています：
+**CI でのプロジェクト設定。** action は `.brooks-lint.yaml`（`strictness`、`disable`、`focus`、`severity`、`ignore`、`custom_risks`）を適用します。読み取り元は PR のチェックアウトではなく**ベースブランチ**です。そのため pull request が自分をレビューするポリシーを緩めることはできません。すべてのリスクを無効化する diff があれば、設定変更が承認される前にスコア 100 で `fail-below` を通過してしまいます。PR が初めて追加した設定も、同じ理由でマージ後に有効になります。レポートの `Config:` 行には使用した出所（例：`applied from base (main)`）が示されます。これはクローンにベース側のオブジェクトがあることを前提とするため、テンプレートは `fetch-depth: 0` でチェックアウトしています。PR でベースの参照が見つからない場合、action はエラーで停止し、`fetch-depth: 0` の使用を案内します。PR 自身のポリシーにはフォールバックしません。PR 以外（ローカル実行を含む）では、ベースの参照を取得できない場合、作業ツリーの設定にフォールバックし、その出所を明記します。PR 自身のコピーを使うには `config-ref: head` を設定してください —— `.brooks-lint.yaml` が CODEOWNERS で保護されており、設定変更をその PR 内で有効にしたい場合に適しています：
 
 ```yaml
         with:

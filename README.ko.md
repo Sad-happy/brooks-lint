@@ -451,7 +451,7 @@ jobs:
 
 `fail-on-regression`은 `.brooks-lint-history.json`을 읽으므로, "새로운 회귀 없음"을 강제하려면 그 파일을 커밋하세요. `sarif-file`을 설정하면 진단이 PR의 **Files changed** 탭에 인라인으로 나타나며, job에 `security-events: write` 권한이 필요합니다.
 
-**CI의 프로젝트 설정.** action은 `.brooks-lint.yaml`(`strictness`, `disable`, `focus`, `severity`, `ignore`, `custom_risks`)을 적용하며, PR 체크아웃이 아니라 **base 브랜치**에서 읽습니다. 따라서 pull request가 자신을 리뷰하는 정책을 약화시킬 수 없습니다. 모든 위험을 비활성화하는 diff라면 그 설정 변경이 승인되기도 전에 점수 100으로 `fail-below`를 통과했을 것입니다. PR이 처음 추가한 설정도 같은 이유로 머지된 뒤에 적용됩니다. 리포트의 `Config:` 줄에는 사용한 출처(예: `applied from base (main)`)가 표시됩니다. 이를 위해서는 클론에 base 객체가 있어야 하므로 템플릿이 `fetch-depth: 0`으로 체크아웃합니다. 얕은 클론에서는 체크아웃된 파일로 폴백하고 그 사실을 알립니다. PR 자체의 사본을 쓰려면 `config-ref: head`를 설정하세요 — `.brooks-lint.yaml`이 CODEOWNERS로 보호되어 있고 설정 변경이 그것을 제안한 PR에서 바로 적용되어야 할 때 적합합니다:
+**CI의 프로젝트 설정.** action은 `.brooks-lint.yaml`(`strictness`, `disable`, `focus`, `severity`, `ignore`, `custom_risks`)을 적용하며, PR 체크아웃이 아니라 **base 브랜치**에서 읽습니다. 따라서 pull request가 자신을 리뷰하는 정책을 약화시킬 수 없습니다. 모든 위험을 비활성화하는 diff라면 그 설정 변경이 승인되기도 전에 점수 100으로 `fail-below`를 통과했을 것입니다. PR이 처음 추가한 설정도 같은 이유로 머지된 뒤에 적용됩니다. 리포트의 `Config:` 줄에는 사용한 출처(예: `applied from base (main)`)가 표시됩니다. 이를 위해서는 클론에 base 객체가 있어야 하므로 템플릿이 `fetch-depth: 0`으로 체크아웃합니다. PR에서 base 참조가 없으면 action은 오류로 중단하고 `fetch-depth: 0`을 사용하도록 안내합니다. PR 자체의 정책으로 폴백하지 않습니다. PR 이외의 실행(로컬 실행 포함)에서는 base 참조를 읽을 수 없으면 작업 트리의 설정으로 폴백하고 출처를 명시합니다. PR 자체의 사본을 쓰려면 `config-ref: head`를 설정하세요 — `.brooks-lint.yaml`이 CODEOWNERS로 보호되어 있고 설정 변경이 그것을 제안한 PR에서 바로 적용되어야 할 때 적합합니다:
 
 ```yaml
         with:

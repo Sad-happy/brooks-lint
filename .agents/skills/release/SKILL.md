@@ -35,8 +35,9 @@ and every version-bearing text file.
 2. **Propagate.** `npm run bump` — writes the version into
    `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
    `.codex-plugin/plugin.json`, `gemini-extension.json`, and every version-bearing
-   text file discovered by `scripts/version-refs.mjs` (all six README badges plus
-   the JSON-LD `softwareVersion` on the docs landing page). Do not maintain a list
+   text file discovered by `scripts/version-refs.mjs` (all six README badges and action `uses:` pins,
+   the JSON-LD `softwareVersion` on the docs landing page, and
+   `docs/github-action-example.yml`). Do not maintain a list
    here — the script's is authoritative.
 3. **Write the changelog.** Add a new section at the top of `CHANGELOG.md` with
    categorized notes (Added / Fixed / Changed) summarizing the commits since the
