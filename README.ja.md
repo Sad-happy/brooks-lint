@@ -251,7 +251,7 @@ graph TD
 
 ## インストール
 
-### Claude Code（推奨）
+### Claude Code
 
 ```bash
 /plugin marketplace add hyhmrright/brooks-lint
@@ -305,7 +305,13 @@ curl -fsSL https://raw.githubusercontent.com/hyhmrright/brooks-lint/main/scripts
 OpenCode v2、Kiro、Factory Droid、DeepSeek Harness は `/brooks-review` も自動登録します。スキルが初めて、
 または上記にないエージェントをお使いですか？ **[docs/getting-started.md](docs/getting-started.md)** を参照してください。
 
-> **🧪 検証状況。** Claude Code、Gemini CLI、Codex CLI はメンテナーによって検証済みです。上記の十の
+> **Maintainer testing policy (2026-10-16).** My Claude account has been banned. Going forward,
+> I will only test and verify Codex-related capabilities. Earlier verification of Claude Code,
+> Gemini CLI, or other platforms is historical and does not imply ongoing testing. Existing
+> integrations remain available, but their current behavior is not verified by the maintainer;
+> community test reports and contributions are welcome.
+
+> **🧪 過去の検証記録。** Claude Code、Gemini CLI、Codex CLI は以前メンテナーによって検証されました。上記の十の
 > プラットフォームは各ツールの公式スキル仕様から文書化され、ファイルレイアウトのレベルで検証されています
 > （インストーラーはテスト済み）が、メンテナーがすべてのプラットフォームでエンドツーエンドに実行したわけ
 > ではまだありません。どれかを試した——動いた **または** 壊れた？ プラットフォーム、バージョン、見たこと

@@ -250,7 +250,7 @@ graph TD
 
 ## 설치
 
-### Claude Code（권장）
+### Claude Code
 
 ```bash
 /plugin marketplace add hyhmrright/brooks-lint
@@ -303,7 +303,13 @@ curl -fsSL https://raw.githubusercontent.com/hyhmrright/brooks-lint/main/scripts
 OpenCode v2, Kiro, Factory Droid, DeepSeek Harness는 `/brooks-review`도 자동 등록합니다. 스킬이
 처음이거나 위 목록에 없는 에이전트를 쓰시나요? **[docs/getting-started.md](docs/getting-started.md)**를 참고하세요.
 
-> **🧪 검증 상태.** Claude Code, Gemini CLI, Codex CLI는 메인테이너가 검증했습니다. 위
+> **Maintainer testing policy (2026-10-16).** My Claude account has been banned. Going forward,
+> I will only test and verify Codex-related capabilities. Earlier verification of Claude Code,
+> Gemini CLI, or other platforms is historical and does not imply ongoing testing. Existing
+> integrations remain available, but their current behavior is not verified by the maintainer;
+> community test reports and contributions are welcome.
+
+> **🧪 과거 검증 기록.** Claude Code, Gemini CLI, Codex CLI는 이전에 메인테이너가 검증했습니다. 위
 > 열 개 플랫폼은 각 도구의 공식 스킬 명세를 토대로 문서화되었고 파일 레이아웃
 > 수준에서 검증되었으나（설치기는 테스트되었음）, 메인테이너가 모든 플랫폼에서 end-to-end로 직접 실행해 보지는
 > 못했습니다. 어떤 것을 시도해 보셨나요 — 잘 되든 **안 되든**? 플랫폼, 버전, 본 결과를 담아

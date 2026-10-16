@@ -250,7 +250,7 @@ Because the parser is deterministic and the corpus is frozen, `npm run benchmark
 
 ## Installation
 
-### Claude Code (recommended)
+### Claude Code
 
 ```bash
 /plugin marketplace add hyhmrright/brooks-lint
@@ -303,7 +303,13 @@ The installer copies the skills **flat** into the right folder, so the shared fr
 OpenCode v2, Kiro, Factory Droid, and DeepSeek Harness also auto-register `/brooks-review`. New to
 skills, or using an agent not listed? See **[docs/getting-started.md](docs/getting-started.md)**.
 
-> **🧪 Verification status.** Claude Code, Gemini CLI, and Codex CLI are maintainer-verified. The
+> **Maintainer testing policy (2026-10-16).** My Claude account has been banned. Going forward,
+> I will only test and verify Codex-related capabilities. Earlier verification of Claude Code,
+> Gemini CLI, or other platforms is historical and does not imply ongoing testing. Existing
+> integrations remain available, but their current behavior is not verified by the maintainer;
+> community test reports and contributions are welcome.
+
+> **🧪 Historical verification.** Claude Code, Gemini CLI, and Codex CLI were previously verified by the maintainer. The
 > ten platforms above are documented from each tool's official skill spec and verified at the
 > file-layout level (the installer is tested), but not yet run end-to-end by the maintainer on every
 > platform. Tried one — working **or** broken?

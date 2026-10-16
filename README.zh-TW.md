@@ -249,7 +249,7 @@ graph TD
 
 ## 安裝
 
-### Claude Code（推薦）
+### Claude Code
 
 ```bash
 /plugin marketplace add hyhmrright/brooks-lint
@@ -300,7 +300,13 @@ curl -fsSL https://raw.githubusercontent.com/hyhmrright/brooks-lint/main/scripts
 OpenCode v2、Kiro、Factory Droid 與 DeepSeek Harness 還會自動註冊 `/brooks-review`。不熟悉 skills、
 或用的是上面沒列出的 agent？見 **[docs/getting-started.md](docs/getting-started.md)**。
 
-> **🧪 驗證狀態。** Claude Code、Gemini CLI、Codex CLI 已由維護者驗證。上面十個平台依據各工具官方技能規範撰寫，
+> **Maintainer testing policy (2026-10-16).** My Claude account has been banned. Going forward,
+> I will only test and verify Codex-related capabilities. Earlier verification of Claude Code,
+> Gemini CLI, or other platforms is historical and does not imply ongoing testing. Existing
+> integrations remain available, but their current behavior is not verified by the maintainer;
+> community test reports and contributions are welcome.
+
+> **🧪 歷史驗證紀錄。** Claude Code、Gemini CLI、Codex CLI 曾由維護者驗證。上面十個平台依據各工具官方技能規範撰寫，
 > 並已在檔案佈局層面驗證（安裝器經過測試），但維護者尚未在每個平台端到端實跑。在某平台試過了——無論成功**還是**失敗？
 > 請[提一個 issue](https://github.com/hyhmrright/brooks-lint/issues/new)，附上平台、版本和你看到的結果。
 > 用的是其他相容 Agent Skills 的 agent？它幾乎肯定以同樣方式運作——告訴我們，我們會補上。
