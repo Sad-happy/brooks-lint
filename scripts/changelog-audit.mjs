@@ -43,16 +43,6 @@ function gitOrNull(args, cwd) {
 }
 
 /**
- * The most recent RELEASE tag reachable from HEAD, or null when there is none —
- * a fresh repo or a shallow CI clone fetched without tags. Callers report the
- * skip rather than failing, because an unknowable range is not a gap.
- *
- * Matched against `v[0-9]*` because that is the shape the release process creates
- * (`gh release create v<version>`). Without the filter any other tag — a
- * `nightly-*`, an experiment — would win `describe` and silently collapse the
- * range to nothing, turning this whole gate into a vacuous pass.
- */
-/**
  * True when `cwd` is itself a git work tree root. git discovery walks upwards,
  * so a de-gitted copy of this repo sitting inside another one would otherwise
  * derive its range from the OUTER repo's tags — a nonsense range reported as
@@ -66,6 +56,16 @@ export function isRepoRoot(cwd) {
   return toplevel !== null && realpathSync(toplevel) === realpathSync(cwd);
 }
 
+/**
+ * The most recent RELEASE tag reachable from HEAD, or null when there is none —
+ * a fresh repo or a shallow CI clone fetched without tags. Callers report the
+ * skip rather than failing, because an unknowable range is not a gap.
+ *
+ * Matched against `v[0-9]*` because that is the shape the release process creates
+ * (`gh release create v<version>`). Without the filter any other tag — a
+ * `nightly-*`, an experiment — would win `describe` and silently collapse the
+ * range to nothing, turning this whole gate into a vacuous pass.
+ */
 export function lastTag(cwd) {
   return gitOrNull(["describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"], cwd);
 }
@@ -167,8 +167,13 @@ export function changelogTrailer(body) {
  * as plainly and failing on one would block a legitimate release.
  */
 function citedPullRequests(section) {
-  const matches = [...section.matchAll(/#(\d+)|\/pull\/(\d+)/g)];
-  return new Set(matches.map((match) => Number(match[1] ?? match[2])));
+  const matches = [...section.matchAll(/(?:#|\/pull\/)(\d+)/g)];
+  return new Set(matches.map((match) => Number(match[1])));
+}
+
+/** `1 commit` / `2 commits` — a count that reads as English at either end. */
+export function plural(count, noun) {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
 /**
@@ -237,15 +242,28 @@ export function coverageVerdict({ version, cwd, changelog }) {
   };
 }
 
+/**
+ * The one line `npm run validate` prints about coverage, whichever way the gate
+ * went.
+ *
+ * Formed here rather than at the call site so both branches are reachable from
+ * a test. validate-repo.mjs can only ever audit brooks-lint itself, so whatever
+ * state this repo happens to be in, the other branch goes unread — which is
+ * exactly how the audited half once shipped unimplemented behind an assertion
+ * that accepted either.
+ */
+export function coverageAnnouncement({ skipped, commitCount, range }) {
+  if (skipped !== null) return `Changelog coverage: not audited — ${skipped}.`;
+  return (
+    `Changelog coverage: audited ${plural(commitCount, "commit")} in ${range} — ` +
+    `pull-request citations only; walk the rest with npm run changelog:audit.`
+  );
+}
+
 // ── CLI ────────────────────────────────────────────────────────────────────
 
 function truncate(text, width) {
   return text.length <= width ? text : `${text.slice(0, width - 1)}…`;
-}
-
-/** `1 commit` / `2 commits` — a count that reads as English at either end. */
-export function plural(count, noun) {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
 /**
@@ -295,7 +313,11 @@ export function report(range, entries, sectionHeading, { enforce = true } = {}) 
   return lines;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// process.argv[1] keeps the path as invoked, while import.meta.url resolves
+// symlinks. Comparing them raw makes this entire block a no-op for any checkout
+// reached through one — the command would print nothing and exit 0, which is
+// the silent pass this whole module exists to abolish.
+if (process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { version } = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
   const tag = isRepoRoot(root) ? lastTag(root) : null;
   if (tag === null) {

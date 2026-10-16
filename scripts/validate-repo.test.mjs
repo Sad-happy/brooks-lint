@@ -11,7 +11,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, cpSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import os from "node:os";
@@ -30,6 +30,7 @@ import {
 import {
   auditRange,
   changelogTrailer,
+  coverageAnnouncement,
   exemption,
   commitsSince,
   coverageVerdict,
@@ -46,6 +47,7 @@ import { reportToSarif } from "./sarif.mjs";
 import { severityBreached, isRegression } from "./ci-gate.mjs";
 import { summarize } from "./benchmark.mjs";
 import { versionRefs } from "./version-refs.mjs";
+import { STAR_HISTORY_FILES } from "./gen-star-history.mjs";
 import {
   linkedSetupGuides,
   parseInstallerPlatforms,
@@ -1092,6 +1094,167 @@ test("validate-repo.mjs runs the changelog coverage check and says what it did",
   assert.match(stdout, /Changelog coverage: (not audited — |audited)/);
 });
 
+/** A script's combined output and exit status, without throwing on failure. */
+function runScript(file, cwd) {
+  try {
+    const output = execFileSync("node", [file], { encoding: "utf8", cwd, stdio: ["ignore", "pipe", "pipe"] });
+    return { status: 0, output };
+  } catch (err) {
+    return { status: err.status, output: `${err.stdout ?? ""}${err.stderr ?? ""}` };
+  }
+}
+
+/**
+ * A throwaway clone with the working tree's scripts copied in, staged as if a
+ * release were being cut.
+ *
+ * Both release scripts resolve their root from __dirname, so they can only ever
+ * examine brooks-lint itself — which is always tagged. Everything they do while
+ * a release is IN PROGRESS, including the exit status that makes either one a
+ * gate, is unreachable without this.
+ */
+function withStagedRelease({ version, section, subject, tagIt = false }, check) {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "brooks-release-"));
+  const git = (...args) =>
+    execFileSync(
+      "git",
+      ["-C", dir, "-c", "user.email=test@example.invalid", "-c", "user.name=test", ...args],
+      { encoding: "utf8" },
+    );
+  try {
+    execFileSync("git", ["clone", "-q", path.resolve(__dirname, ".."), dir], { encoding: "utf8" });
+    cpSync(__dirname, path.join(dir, "scripts"), { recursive: true });
+
+    // The tag lands BEFORE the commit under audit. Tagging HEAD instead would
+    // collapse the range to nothing and the fixture would prove nothing.
+    if (tagIt) git("tag", `v${version}`);
+
+    if (subject !== undefined) {
+      writeFileSync(path.join(dir, "released.txt"), subject);
+      git("add", "released.txt");
+      git("commit", "-q", "-m", subject);
+    }
+
+    const pkg = JSON.parse(readFileSync(path.join(dir, "package.json"), "utf8"));
+    pkg.version = version;
+    writeFileSync(path.join(dir, "package.json"), `${JSON.stringify(pkg, null, 2)}\n`);
+
+    const changelog = readFileSync(path.join(dir, "CHANGELOG.md"), "utf8");
+    const at = changelog.indexOf("## [");
+    writeFileSync(
+      path.join(dir, "CHANGELOG.md"),
+      section === null ? changelog.slice(0, at) : `${changelog.slice(0, at) + section}\n\n${changelog.slice(at)}`,
+    );
+
+    check((script) => runScript(path.join(dir, "scripts", script), dir));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const UNCITED = {
+  version: "9.9.9",
+  section: "## [9.9.9] - 2026-09-20\n\n### Added\n\n- something, but not the pull request",
+  subject: "feat: a merged contribution (#9999)",
+};
+const CITED = { ...UNCITED, section: "## [9.9.9] - 2026-09-20\n\n### Added\n\n- a merged contribution (#9999)" };
+
+test("validate-repo.mjs fails a release whose section never cites a merged pull request", () => {
+  // Deleting the `for (const gap of verdict.errors) check(...)` line leaves the
+  // gate announcing itself and enforcing nothing. Nothing else reads it.
+  withStagedRelease(UNCITED, (run) => {
+    const { output } = run("validate-repo.mjs");
+    assert.match(output, /never cites #9999/);
+    assert.match(output, /Changelog coverage: audited \d+ commits? in v/);
+  });
+});
+
+test("validate-repo.mjs passes the same release once the section cites it", () => {
+  // The paired case: without it the test above would also pass on a gate that
+  // fails every release unconditionally.
+  withStagedRelease(CITED, (run) => {
+    const { output } = run("validate-repo.mjs");
+    assert.doesNotMatch(output, /never cites/);
+    assert.match(output, /Changelog coverage: audited \d+ commits? in v/);
+  });
+});
+
+test("changelog-audit.mjs exits non-zero on an uncited pull request during a release", () => {
+  withStagedRelease(UNCITED, (run) => {
+    const { status, output } = run("changelog-audit.mjs");
+    assert.equal(status, 1, "the command is a gate; a gap must fail it");
+    assert.match(output, /FAIL: § \[9\.9\.9\] - 2026-09-20 never cites 1 pull request merged/);
+    assert.match(output, /^ {4}#9999 {2}[0-9a-f]{7}/m);
+  });
+});
+
+test("changelog-audit.mjs exits zero once the section cites it", () => {
+  withStagedRelease(CITED, (run) => {
+    const { status, output } = run("changelog-audit.mjs");
+    assert.equal(status, 0);
+    assert.match(output, /Every pull request in the range is cited/);
+  });
+});
+
+test("changelog-audit.mjs reports a gap as backlog, not failure, between releases", () => {
+  // Enforcing here would leave a documented command permanently red: nobody
+  // edits a section that already shipped.
+  withStagedRelease({ ...UNCITED, tagIt: true }, (run) => {
+    const { status, output } = run("changelog-audit.mjs");
+    assert.equal(status, 0, "an uncited pull request is a backlog item between releases");
+    assert.match(output, /No release in progress \(v9\.9\.9 is tagged\) — this is the next release's backlog:/);
+    assert.match(output, /v9\.9\.9\.\.HEAD/, "the tag must precede the commit, or the range is empty");
+    assert.match(output, /feat: a merged contribution/, "the uncited commit is still listed as backlog");
+    assert.doesNotMatch(output, /FAIL|never cites/);
+  });
+});
+
+test("changelog-audit.mjs audits the range from the last tag to HEAD", () => {
+  withStagedRelease(CITED, (run) => {
+    assert.match(run("changelog-audit.mjs").output, /Changelog audit — \d+ commits? in v[\d.]+\.\.HEAD,/);
+  });
+});
+
+test("changelog-audit.mjs refuses a CHANGELOG with no release heading", () => {
+  withStagedRelease({ ...UNCITED, section: null }, (run) => {
+    const { status, output } = run("changelog-audit.mjs");
+    assert.equal(status, 1);
+    assert.match(output, /no `## \[version\] - date` heading/);
+  });
+});
+
+test("changelog-audit.mjs refuses to derive a range from a repository it is not the root of", () => {
+  // git discovery walks upwards: a de-gitted copy inside another repo would
+  // otherwise take that repo's tags and report a nonsense range as fact.
+  const outer = mkdtempSync(path.join(os.tmpdir(), "brooks-outer-"));
+  try {
+    const git = (...args) =>
+      execFileSync(
+        "git",
+        ["-C", outer, "-c", "user.email=test@example.invalid", "-c", "user.name=test", ...args],
+        { encoding: "utf8" },
+      );
+    git("init", "-q", "-b", "main");
+    writeFileSync(path.join(outer, "outer.txt"), "outer");
+    git("add", "outer.txt");
+    git("commit", "-q", "-m", "outer repo");
+    git("tag", "v9.0.0");
+
+    const inner = path.join(outer, "inner");
+    cpSync(path.resolve(__dirname, ".."), inner, {
+      recursive: true,
+      filter: (src) => !src.includes(`${path.sep}.git`) && !src.includes("node_modules"),
+    });
+
+    const { status, output } = runScript(path.join(inner, "scripts", "changelog-audit.mjs"), inner);
+    assert.equal(status, 0);
+    assert.match(output, /No release tag is reachable from HEAD/);
+    assert.doesNotMatch(output, /v9\.0\.0/, "the outer repository's tag must not become the range");
+  } finally {
+    rmSync(outer, { recursive: true, force: true });
+  }
+});
+
 test("validate-repo.mjs ignores an inherited CLAUDE_PLUGIN_ROOT", () => {
   // Running `npm run validate` from inside Claude Code exports CLAUDE_PLUGIN_ROOT.
   // The hook branches on that variable, so leaking it into the default-output
@@ -1505,6 +1668,238 @@ test("report says so when a range holds nothing but exempt commits", () => {
 
 test("extractChangelogSection returns an empty string when there is no release heading", () => {
   assert.equal(extractChangelogSection("# Changelog\n\nNothing released yet.\n"), "");
+});
+
+test("coverageAnnouncement names the reason when the gate stands down", () => {
+  assert.equal(
+    coverageAnnouncement({ skipped: "v1.7.0 is already tagged", errors: [] }),
+    "Changelog coverage: not audited — v1.7.0 is already tagged.",
+  );
+});
+
+test("coverageAnnouncement names the range and its scope when it audits", () => {
+  // Both branches are pinned here because validate-repo.mjs can only ever audit
+  // brooks-lint itself: whichever state this repo is in, the other branch goes
+  // unread. That is how the audited half once shipped unimplemented.
+  assert.equal(
+    coverageAnnouncement({ skipped: null, commitCount: 1, range: "v1.7.0..HEAD", errors: [] }),
+    "Changelog coverage: audited 1 commit in v1.7.0..HEAD — " +
+      "pull-request citations only; walk the rest with npm run changelog:audit.",
+  );
+  assert.match(
+    coverageAnnouncement({ skipped: null, commitCount: 4, range: "v1.7.0..HEAD", errors: [] }),
+    /audited 4 commits in/,
+  );
+});
+
+test("auditRange surfaces a commit's Changelog trailer", () => {
+  const commits = parseCommitLog(
+    logRecord({ subject: "feat: a thing", body: "Body.\n\nChangelog: added — the thing\n" }),
+  );
+  assert.equal(auditRange(commits, "## [1.7.0]\n")[0].trailer, "added — the thing");
+});
+
+test("a pull request cited only by a /pull/ URL counts as cited", () => {
+  // Added because a URL-only citation was a false failure that would have
+  // blocked a legitimate release.
+  const commits = parseCommitLog(logRecord({ subject: "feat: x (#33)" }));
+  const section = "## [1.7.0]\n\n- see https://github.com/o/r/pull/33 for the detail\n";
+  assert.equal(auditRange(commits, section)[0].gap, false);
+});
+
+test("pullRequestOf needs the merge subject to start with the merge phrase", () => {
+  assert.equal(pullRequestOf('Revert "Merge pull request #7 from fork/topic"'), null);
+  assert.equal(pullRequestOf("Merge pull request #7 from fork/topic"), 7);
+});
+
+test("pullRequestOf needs the squash marker to end the subject", () => {
+  assert.equal(pullRequestOf("fix: partly reverts (#7) and adds a guard"), null);
+  assert.equal(pullRequestOf("fix: a guard (#7)"), 7);
+});
+
+test("the star history exemption needs a bot author", () => {
+  // A human hand-editing the chart is a change this changelog records —
+  // CLAUDE.md forbids the edit outright, which is all the more reason to see it.
+  const commit = parseCommitLog(
+    logRecord({ author: "hyh", subject: "chore: refresh the chart", files: STAR_HISTORY_FILES }),
+  )[0];
+  assert.equal(exemption(commit), null);
+});
+
+test("the star history exemption needs [bot] to end the author", () => {
+  const commit = parseCommitLog(
+    logRecord({ author: "not-a[bot] really", subject: "chore: refresh", files: STAR_HISTORY_FILES }),
+  )[0];
+  assert.equal(exemption(commit), null);
+});
+
+test("the star history exemption needs the commit to have touched files", () => {
+  // An empty file list makes `every` vacuously true, which would exempt any
+  // bot commit that changed nothing this parser could see.
+  const commit = parseCommitLog(logRecord({ author: "github-actions[bot]", subject: "chore: refresh" }))[0];
+  assert.equal(exemption(commit), null);
+});
+
+test("the release bump exemption is anchored to the start of the subject", () => {
+  const reverted = parseCommitLog(
+    logRecord({ subject: 'Revert "chore(release): bump version to 1.2.3"' }),
+  )[0];
+  assert.equal(exemption(reverted), null);
+  const real = parseCommitLog(logRecord({ subject: "chore(release): bump version to 1.2.3" }))[0];
+  assert.equal(exemption(real), "release bump");
+});
+
+test("lastTag ignores a tag that starts with v but is not a version", () => {
+  // `v*` is a glob, not a version shape: it accepted vendor-snapshot, which
+  // would win describe and collapse the range to a vacuous pass.
+  withTempRepo(({ dir, git, commit }) => {
+    commit("first");
+    git("tag", "v0.1.0");
+    commit("second");
+    git("tag", "vendor-snapshot");
+    assert.equal(lastTag(dir), "v0.1.0");
+  });
+});
+
+test("commitsSince excludes commits that HEAD never took in", () => {
+  // `...` is the symmetric difference: it would pull in the tagged side's own
+  // commits and report them as unreleased work.
+  withTempRepo(({ dir, git, commit }) => {
+    commit("shared");
+    git("checkout", "-q", "-b", "side");
+    commit("only on the tagged side");
+    git("tag", "v0.1.0");
+    git("checkout", "-q", "main");
+    commit("only on main");
+    assert.deepEqual(
+      commitsSince("v0.1.0", dir).map((entry) => entry.subject),
+      ["only on main"],
+    );
+  });
+});
+
+test("coverageVerdict stands down when no release tag is reachable", () => {
+  withTempRepo(({ dir, commit }) => {
+    commit("first");
+    const verdict = coverageVerdict({
+      version: "0.1.0",
+      cwd: dir,
+      changelog: "## [0.1.0] - 2026-09-20\n\n- something\n",
+    });
+    assert.match(verdict.skipped, /no release tag/);
+    assert.deepEqual(verdict.errors, []);
+  });
+});
+
+test("coverageVerdict needs the section heading to open with the version", () => {
+  // `includes` would accept [10.2.05] for 0.2.0 and audit against a section
+  // belonging to another release.
+  withTempRepo(({ dir, git, commit }) => {
+    commit("first");
+    git("tag", "v0.1.0");
+    commit("docs: a contributor fix (#25)");
+    const verdict = coverageVerdict({
+      version: "0.2.0",
+      cwd: dir,
+      changelog: "## [10.2.05] - 2026-09-20\n\n- another release entirely\n",
+    });
+    assert.match(verdict.skipped, /no \[0\.2\.0\] section yet/);
+  });
+});
+
+test("parseCommitLog gives a root commit no parents", () => {
+  // Without the filter an empty %P splits to [""], a length of 1 rather than 0.
+  assert.deepEqual(parseCommitLog(logRecord({ parents: "", subject: "first" }))[0].parents, []);
+});
+
+test("parseCommitLog tolerates a record that carries no file block", () => {
+  const record = RECORD + ["a".repeat(40), "hyh", "abc123", "feat: x", ""].join(FIELD);
+  assert.deepEqual(parseCommitLog(record)[0].files, []);
+});
+
+test("extractChangelogSection ignores a heading that carries no date", () => {
+  // The release process mandates `## [version] - YYYY-MM-DD`; a bare
+  // `## [Unreleased]` is not a release section and must not be audited against.
+  const text = "# Changelog\n\n## [Unreleased]\n\n- wip\n\n## [1.7.0] - 2026-09-20\n\n- shipped\n";
+  const section = extractChangelogSection(text);
+  assert.match(section, /^## \[1\.7\.0\] - 2026-09-20/);
+  assert.doesNotMatch(section, /wip/);
+});
+
+// ── report rendering ───────────────────────────────────────────────────────
+//
+// The checklist IS the product of `npm run changelog:audit`. Until these, every
+// line of it could stop rendering and the suite stayed green.
+
+function renderedReport(records, section, options) {
+  return report("v1.6.0..HEAD", auditRange(parseCommitLog(records), section), "[1.7.0]", options).join("\n");
+}
+
+test("report renders a walkable line for each commit needing an entry", () => {
+  const lines = renderedReport(
+    logRecord({ hash: "e".repeat(40), author: "2233admin", subject: "docs: fix the installer" }),
+    "## [1.7.0]\n\n- nothing\n",
+  );
+  // Hash, author and subject all present on one checkbox line, in that order.
+  assert.match(lines, /^ {4}\[ \] eeeeeee {2}2233admin +docs: fix the installer$/m);
+});
+
+test("report flags a deferred entry on the commit's own line", () => {
+  const lines = renderedReport(
+    logRecord({ subject: "feat: x", body: "Changelog: added — later\n" }),
+    "## [1.7.0]\n\n- nothing\n",
+  );
+  assert.match(lines, /⚠ Changelog: added — later/);
+});
+
+test("report flags an uncited pull request on the commit's own line", () => {
+  const lines = renderedReport(logRecord({ subject: "feat: x (#33)" }), "## [1.7.0]\n\n- nothing\n");
+  assert.match(lines, /⚠ PR #33 is never cited in the section/);
+});
+
+test("report lists every gap beneath its FAIL line", () => {
+  const lines = renderedReport(
+    logRecord({ hash: "1".repeat(40), subject: "feat: x (#33)" }) +
+      "\n" +
+      logRecord({ hash: "2".repeat(40), subject: "feat: y (#34)" }),
+    "## [1.7.0]\n\n- nothing\n",
+  );
+  assert.match(lines, /never cites 2 pull requests merged/);
+  assert.match(lines, /^ {4}#33 {2}1111111/m);
+  assert.match(lines, /^ {4}#34 {2}2222222/m);
+});
+
+test("report names the next release's section between releases", () => {
+  const lines = renderedReport(logRecord({ subject: "feat: x" }), "## [1.7.0]\n\n- x\n", { enforce: false });
+  assert.match(lines, /against the next release's section/);
+  assert.doesNotMatch(lines, /CHANGELOG\.md §/);
+});
+
+test("report renders no verdict between releases", () => {
+  // An uncited pull request describes a backlog then, not a defect — nobody
+  // edits a section that already shipped.
+  const lines = renderedReport(logRecord({ subject: "feat: x (#33)" }), "## [1.7.0]\n\n- nothing\n", {
+    enforce: false,
+  });
+  assert.doesNotMatch(lines, /FAIL|never cites|still needs your eyes/);
+});
+
+test("report does not flag a gap on a commit line between releases", () => {
+  const lines = renderedReport(logRecord({ subject: "feat: x (#33)" }), "## [1.7.0]\n\n- nothing\n", {
+    enforce: false,
+  });
+  assert.doesNotMatch(lines, /is never cited in the section/);
+});
+
+test("report keeps a subject at the width whole and elides a longer one", () => {
+  const whole = `feat: ${"a".repeat(50)}`;
+  assert.equal(whole.length, 56);
+  assert.match(renderedReport(logRecord({ subject: whole }), "## [1.7.0]\n\n- x\n"), new RegExp(`${whole}$`, "m"));
+
+  const over = `${whole}b`;
+  const lines = renderedReport(logRecord({ subject: over }), "## [1.7.0]\n\n- x\n");
+  assert.match(lines, /a…$/m, "a subject past the width is elided, not silently cut");
+  assert.doesNotMatch(lines, new RegExp(over));
 });
 
 // ── Summary ────────────────────────────────────────────────────────────────

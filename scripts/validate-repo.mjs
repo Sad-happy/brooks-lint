@@ -16,7 +16,7 @@ import {
 } from "./frontmatter.mjs";
 import { GUIDE_BY_MODE, VALID_MODES } from "./assemble-prompt.mjs";
 import { versionRefs } from "./version-refs.mjs";
-import { coverageVerdict, plural } from "./changelog-audit.mjs";
+import { coverageAnnouncement, coverageVerdict } from "./changelog-audit.mjs";
 import {
   platformDocs,
   setupGuides,
@@ -118,20 +118,10 @@ function checkChangelog() {
 // switch this check off, and an unannounced off-state reads exactly like a pass.
 function checkChangelogCoverage() {
   const verdict = coverageVerdict({ version, cwd: root, changelog: readText("CHANGELOG.md") });
-  if (verdict.skipped !== null) {
-    console.log(`Changelog coverage: not audited — ${verdict.skipped}.`);
-    return;
-  }
-  // Every audited run is announced, not only the failing ones — the range is
-  // context for a failure and the only proof of life on a pass. The scope is
-  // spelled out because the gate proves each merged pull request's number
-  // appears somewhere in the section, never that an entry was written.
-  console.log(
-    `Changelog coverage: audited ${plural(verdict.commitCount, "commit")} in ${verdict.range} — ` +
-      `pull-request citations only; walk the rest with npm run changelog:audit.`,
-  );
+  console.log(coverageAnnouncement(verdict));
   for (const gap of verdict.errors) check(false, gap);
 }
+
 
 // Version strings embedded in text files (README badges, docs JSON-LD). The
 // list lives in version-refs.mjs so this check and bump-version.mjs can never
