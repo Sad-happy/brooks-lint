@@ -479,6 +479,15 @@
       "files": [],
       "mode": "debt",
       "no_risk_codes": true
+    },
+    {
+      "id": 58,
+      "name": "test-config-from-base-ref-disables-risk",
+      "prompt": "Review the test quality of this module. There is no file access in this run — the CI runner read `.brooks-lint.yaml` from the base ref (main) and passed it along, so use this copy as the project config:\n\n```yaml\nversion: 1\nstrictness: legacy-friendly\ndisable:\n  - T5\n```\n\nCoverage report says 92% of lines in `pricing.js` are covered by these tests:\n\n```javascript\n// pricing.test.js\nimport { priceOrder } from './pricing';\n\ntest('prices a single line order', () => {\n  expect(priceOrder([{ sku: 'A', qty: 2, unit: 500 }])).toBe(1000);\n});\n\ntest('prices a multi line order', () => {\n  expect(priceOrder([{ sku: 'A', qty: 1, unit: 500 }, { sku: 'B', qty: 3, unit: 100 }])).toBe(800);\n});\n\ntest('applies a percentage coupon', () => {\n  expect(priceOrder([{ sku: 'A', qty: 1, unit: 1000 }], { percent: 10 })).toBe(900);\n});\n\n// Nothing covers: empty order, qty 0 or negative, a coupon worth more than the\n// subtotal, a missing unit price, or the rounding branch for odd cent totals —\n// every one of which priceOrder has an explicit code path for.\n```",
+      "expected_output": "Test Quality Review that honors the supplied project config instead of ignoring it. Because the config sets `disable: [T5]`, the happy-path-only suite must NOT produce a T5 Coverage Illusion finding — the 92% line coverage with no sad-path, boundary, or rounding tests is exactly a T5 symptom, and T5 is disabled, so it is silently omitted and does not affect the Health Score. The report must carry the config line immediately after the Scope line, stating the provenance it was given: `Config: .brooks-lint.yaml applied from base (main) — strictness: legacy-friendly, 1 risk disabled, 0 paths ignored`. Scoring must use the legacy-friendly deduction weights, so the Health Score should stay high (80+). Any remaining findings still follow the Iron Law (Symptom/Source/Consequence/Remedy).",
+      "files": [],
+      "mode": "test",
+      "no_risk_codes": true
     }
   ]
 }

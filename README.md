@@ -227,7 +227,7 @@ Because the parser is deterministic and the corpus is frozen, `npm run benchmark
 
 **Scoring determinism** — for a fixed finding set (2 Critical / 3 Warning / 1 Suggestion), the strictness presets produce exactly the scores their `common.md` table predicts: strict **34**, balanced **54**, legacy-friendly **74** — and only `legacy-friendly` leads with the top-three fixes.
 
-**Model quality** — whether the model finds the *right* risks on real code is measured by the **57-scenario eval suite** (`evals/evals.json`): `npm run evals` (structural) and `npm run evals:live` (live, needs `ANTHROPIC_API_KEY`).
+**Model quality** — whether the model finds the *right* risks on real code is measured by the **58-scenario eval suite** (`evals/evals.json`): `npm run evals` (structural) and `npm run evals:live` (live, needs `ANTHROPIC_API_KEY`).
 
 > Scope & honesty: the parser numbers are deterministic and exactly reproducible. The strictness and eval-suite figures are single-run live measurements against the model and vary slightly run to run. The parser benchmark measures report-parsing fidelity (does the tooling read every finding the report states?), not whether a given finding is "correct." The severity-count match is the fully independent signal; risk-code agreement also reflects the shared canonical name→code legend.
 
@@ -403,7 +403,7 @@ brooks-lint/
 │   └── brooks-sweep/     # Mode 6: Full Sweep         → sweep-guide.md
 ├── hooks/                # SessionStart hook
 ├── commands/             # short-form command wrappers (auto-installed by the hook)
-├── evals/                # 57-scenario eval suite + frozen parser-fidelity corpus
+├── evals/                # 58-scenario eval suite + frozen parser-fidelity corpus
 └── assets/               # logo, banner, demo
 ```
 
@@ -452,6 +452,15 @@ The action posts the review as a PR comment and optionally fails the check if th
 ```
 
 `fail-on-regression` reads `.brooks-lint-history.json`, so commit that file to enforce "no new regressions". Setting `sarif-file` makes findings appear inline on the PR's **Files changed** tab and requires `security-events: write` permission on the job.
+
+**Project config in CI.** The action applies your `.brooks-lint.yaml` — `strictness`, `disable`, `focus`, `severity`, `ignore`, `custom_risks` — and reads it **from the base branch**, not from the PR's checkout. A pull request therefore cannot weaken the policy that reviews it: a diff that disables every risk would otherwise score 100 and sail through `fail-below` before anyone approved the config change. A config a PR adds for the first time takes effect once merged, for the same reason. The report's `Config:` line names the provenance it used (e.g. `applied from base (main)`). This needs the base object in the clone, which is why the template checks out with `fetch-depth: 0`; on a shallow clone the action falls back to the checked-out file and says so. Set `config-ref: head` to use the PR's own copy instead — appropriate when `.brooks-lint.yaml` is CODEOWNERS-protected and config changes should take effect in the PR that makes them:
+
+```yaml
+        with:
+          mode: review
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          config-ref: base   # base (default) | head
+```
 
 **Custom API endpoint.** `api-base-url` points the action at any Anthropic-compatible `/v1/messages` endpoint — a self-hosted proxy, an LLM gateway, a regional mirror — instead of `api.anthropic.com`. Pass that endpoint's key as `anthropic-api-key` and the model id it expects as `model`:
 

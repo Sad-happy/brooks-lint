@@ -3,6 +3,8 @@
  * Shared prompt assembly with run-evals-live.mjs (via assemble-prompt.mjs).
  *
  * Reads git diff from the project, assembles the system prompt for the mode,
+ * injects the project `.brooks-lint.yaml` (see ci-config.mjs — this path has no
+ * tools, so an uninjected config is an unapplied one),
  * calls Claude API, and outputs JSON { report, score, mode, scope, trend,
  * findings, previousScore, delta } to stdout. With --format sarif it emits a
  * SARIF 2.1.0 log instead (for GitHub Code Scanning).
@@ -13,6 +15,7 @@
  *     --model claude-sonnet-4-6 \
  *     --skills-dir ./skills \
  *     --project-dir /path/to/project \
+ *     [--config-ref base|head] \
  *     [--format json|sarif] \
  *     [--sarif-out brooks-lint.sarif]
  *
@@ -26,6 +29,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Anthropic from "@anthropic-ai/sdk";
 import { assembleSystemPrompt, VALID_MODES } from "./assemble-prompt.mjs";
+import {
+  CONFIG_REFS,
+  configSizeError,
+  configSystemBlock,
+  customRisksBlock,
+  hasCustomRisks,
+  loadProjectConfig,
+} from "./ci-config.mjs";
 import { readHistory, getTrend } from "./history.mjs";
 import { countFindings } from "./report-parse.mjs";
 import { reportToSarif } from "./sarif.mjs";
@@ -38,6 +49,7 @@ const args = parseArgs(process.argv.slice(2));
 const mode = args.mode ?? "review";
 const model = args.model ?? "claude-sonnet-4-6";
 const format = args.format ?? "json";
+const configRef = args["config-ref"] ?? "base";
 const skillsDir = path.resolve(args["skills-dir"] ?? path.join(__dirname, "..", "skills"));
 const projectDir = path.resolve(args["project-dir"] ?? process.cwd());
 const toolVersion = JSON.parse(
@@ -51,6 +63,11 @@ if (!VALID_MODES.includes(mode)) {
 
 if (!["json", "sarif"].includes(format)) {
   console.error(`Unknown format: ${format}. Valid formats: json, sarif`);
+  process.exit(1);
+}
+
+if (!CONFIG_REFS.includes(configRef)) {
+  console.error(`Unknown config-ref: ${configRef}. Valid values: ${CONFIG_REFS.join(", ")}`);
   process.exit(1);
 }
 
@@ -82,7 +99,32 @@ function getGitDiff(projectRoot) {
 const client = new Anthropic();
 
 const { diff, scope } = getGitDiff(projectDir);
-const systemPrompt = assembleSystemPrompt(mode, skillsDir);
+
+// The project config goes in its own system block rather than through
+// assembleSystemPrompt(): that function is shared with run-evals-live.mjs and
+// stays a pure function of (mode, skillsDir), and a system block keeps policy
+// out of the user message, which carries the untrusted diff.
+const projectConfig = loadProjectConfig({ projectDir, configRef });
+
+if (projectConfig.content) {
+  const sizeError = configSizeError(projectConfig.content);
+  if (sizeError) {
+    console.error(JSON.stringify({ error: sizeError, mode, scope }, null, 2));
+    process.exit(1);
+  }
+}
+
+const systemBlocks = [
+  { type: "text", text: assembleSystemPrompt(mode, skillsDir) },
+  { type: "text", text: configSystemBlock(projectConfig) },
+];
+
+// common.md makes custom-risks-guide.md a conditional read; CI has no on-demand
+// read, so the condition has to be mirrored here or `Cx` codes arrive undefined.
+if (projectConfig.content && hasCustomRisks(projectConfig.content)) {
+  const guide = customRisksBlock(skillsDir);
+  if (guide) systemBlocks.push({ type: "text", text: guide });
+}
 
 const userMessage = diff
   ? `Run brooks-lint ${mode} mode on the following diff.\n\nScope: ${scope}\n\n\`\`\`diff\n${diff}\n\`\`\``
@@ -93,7 +135,7 @@ try {
   message = await client.messages.create({
     model,
     max_tokens: 4096,
-    system: systemPrompt,
+    system: systemBlocks,
     messages: [{ role: "user", content: userMessage }],
   });
 } catch (err) {

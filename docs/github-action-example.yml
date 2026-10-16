@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0  # needed for git diff main...HEAD
+          fetch-depth: 0  # needed for git diff main...HEAD and to read .brooks-lint.yaml from the base ref
 
       # Bedrock path (step 1 of 3) — assume the role allowed to invoke the model.
       # - uses: aws-actions/configure-aws-credentials@v6
@@ -61,6 +61,12 @@ jobs:
           # api-base-url: https://bedrock-runtime.${{ env.AWS_REGION }}.amazonaws.com/anthropic  # or https://bedrock-mantle.${{ env.AWS_REGION }}.api.aws/anthropic for Mantle
           # model: global.anthropic.claude-sonnet-5  # ids pass through unchanged
           fail-below: 70  # fail the check if Health Score drops below 70
+          # .brooks-lint.yaml is read from the base ref by default, so a pull request
+          # cannot weaken the policy that reviews it (disabling every risk would score
+          # 100 and pass the gate before the config change was ever approved). Set
+          # `head` only if that file is CODEOWNERS-protected and config changes should
+          # take effect in the PR that makes them.
+          # config-ref: base             # where to read .brooks-lint.yaml from (base | head)
           # fail-on: critical            # fail on any Critical finding (none | warning | critical)
           # fail-on-regression: true     # fail if the Health Score dropped vs the last run
           # sarif-file: brooks-lint.sarif  # also upload findings to GitHub Code Scanning

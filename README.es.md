@@ -228,7 +228,7 @@ Como el parser es determinista y el corpus está congelado, `npm run benchmark` 
 
 **Determinismo del scoring** — para un conjunto fijo de hallazgos (2 Critical / 3 Warning / 1 Suggestion), los presets de severidad producen exactamente las puntuaciones que predice su tabla de `common.md`: strict **34**, balanced **54**, legacy-friendly **74** — y solo `legacy-friendly` encabeza con las tres correcciones principales.
 
-**Calidad del modelo** — si el modelo encuentra los riesgos *correctos* en código real se mide con la **suite de evaluaciones de 57 escenarios** (`evals/evals.json`): `npm run evals` (estructural) y `npm run evals:live` (en vivo, requiere `ANTHROPIC_API_KEY`).
+**Calidad del modelo** — si el modelo encuentra los riesgos *correctos* en código real se mide con la **suite de evaluaciones de 58 escenarios** (`evals/evals.json`): `npm run evals` (estructural) y `npm run evals:live` (en vivo, requiere `ANTHROPIC_API_KEY`).
 
 > Alcance y honestidad: las cifras del parser son deterministas y exactamente reproducibles. Las cifras de severidad y de la suite de evaluaciones son mediciones en vivo de una sola ejecución contra el modelo y varían ligeramente entre ejecuciones. El benchmark del parser mide la fidelidad del parseo de informes (¿lee la herramienta cada hallazgo que el informe declara?), no si un hallazgo dado es "correcto". La coincidencia del conteo de severidad es la señal totalmente independiente; la concordancia de códigos de riesgo también refleja la leyenda canónica compartida de nombre→código.
 
@@ -403,7 +403,7 @@ brooks-lint/
 │   └── brooks-sweep/     # Modo 6: Barrido completo      → sweep-guide.md
 ├── hooks/                # hook SessionStart
 ├── commands/             # envoltorios de comandos cortos (los instala el hook)
-├── evals/                # suite de 57 escenarios + corpus congelado de fidelidad del parser
+├── evals/                # suite de 58 escenarios + corpus congelado de fidelidad del parser
 └── assets/               # logo, banner, demo
 ```
 
@@ -452,6 +452,15 @@ La action publica la revisión como un comentario del PR y, opcionalmente, hace 
 ```
 
 `fail-on-regression` lee `.brooks-lint-history.json`, así que confirma ese archivo para imponer "sin nuevas regresiones". Definir `sarif-file` hace que los hallazgos aparezcan en línea en la pestaña **Files changed** del PR y requiere el permiso `security-events: write` en el job.
+
+**Config del proyecto en CI.** La action aplica tu `.brooks-lint.yaml` —`strictness`, `disable`, `focus`, `severity`, `ignore`, `custom_risks`— y lo lee **desde la rama base**, no desde el checkout del PR. Así un pull request no puede debilitar la política que lo revisa: un diff que desactivara todos los riesgos puntuaría 100 y pasaría `fail-below` antes de que nadie hubiera aprobado ese cambio de configuración. Una configuración que un PR añade por primera vez surte efecto una vez fusionada, por el mismo motivo. La línea `Config:` del informe indica la procedencia que se usó (p. ej. `applied from base (main)`). Esto necesita el objeto de la rama base en el clon, y por eso la plantilla hace checkout con `fetch-depth: 0`; en un clon superficial la action recurre al archivo del checkout y lo dice. Define `config-ref: head` para usar la copia del propio PR —apropiado cuando `.brooks-lint.yaml` está protegido por CODEOWNERS y los cambios de configuración deben surtir efecto en el PR que los introduce—:
+
+```yaml
+        with:
+          mode: review
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          config-ref: base   # base (default) | head
+```
 
 **Endpoint de API personalizado.** `api-base-url` apunta la action a cualquier endpoint `/v1/messages` compatible con Anthropic —un proxy autoalojado, una pasarela de LLM, un espejo regional— en lugar de `api.anthropic.com`. Pasa la clave de ese endpoint como `anthropic-api-key` y el id de modelo que espera como `model`:
 

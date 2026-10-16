@@ -16,6 +16,15 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import os from "node:os";
 import { assembleSystemPrompt, VALID_MODES } from "./assemble-prompt.mjs";
+import {
+  MAX_CONFIG_BYTES,
+  baseRefCandidates,
+  configSizeError,
+  configSystemBlock,
+  customRisksBlock,
+  hasCustomRisks,
+  loadProjectConfig,
+} from "./ci-config.mjs";
 import { readHistory, appendHistory, getTrend, normalizeMode, sparkline, renderHistory } from "./history.mjs";
 import {
   parseFrontmatterBooks,
@@ -1931,6 +1940,149 @@ test("report keeps a subject at the width whole and elides a longer one", () => 
   const lines = renderedReport(logRecord({ subject: over }), "## [1.7.0]\n\n- x\n");
   assert.match(lines, /a…$/m, "a subject past the width is elided, not silently cut");
   assert.doesNotMatch(lines, new RegExp(over));
+});
+
+// ── ci-config (project config resolution for CI) ───────────────────────────
+
+console.log("\nci-config");
+
+// Readers are injected so resolution order is tested without a fixture repo.
+const refReader = (files) => (_dir, ref, name) => files[`${ref}:${name}`] ?? null;
+const treeReader = (content) => () => content;
+
+test("baseRefCandidates prefers the remote-tracking ref for the PR base branch", () => {
+  assert.deepEqual(baseRefCandidates({ GITHUB_BASE_REF: "release/2.0" }), [
+    { ref: "origin/release/2.0", label: "release/2.0" },
+    { ref: "release/2.0", label: "release/2.0" },
+  ]);
+});
+
+test("baseRefCandidates falls back to the default branches off a pull_request", () => {
+  // Scheduled and manual runs have no GITHUB_BASE_REF at all.
+  assert.deepEqual(baseRefCandidates({}).map((c) => c.ref), [
+    "origin/main", "main", "origin/master", "master",
+  ]);
+});
+
+test("loadProjectConfig reads the base ref, not the working tree", () => {
+  // The whole point of the default: a PR that rewrites the config in its own
+  // diff must not be graded under the rewrite.
+  const loaded = loadProjectConfig({
+    projectDir: "/repo",
+    env: { GITHUB_BASE_REF: "main" },
+    refExists: (_dir, ref) => ref === "origin/main",
+    showRef: refReader({ "origin/main:.brooks-lint.yaml": "strictness: strict\n" }),
+    readFile: treeReader("disable: [R1, R2, R3, R4, R5, R6]\n"),
+  });
+  assert.equal(loaded.content, "strictness: strict\n");
+  assert.equal(loaded.provenance, "base (main)");
+});
+
+test("loadProjectConfig skips a base candidate that does not resolve", () => {
+  // A pull_request checkout has origin/<base> but no local branch of that name;
+  // other setups have the reverse. Whichever resolves is the base.
+  const loaded = loadProjectConfig({
+    projectDir: "/repo",
+    env: { GITHUB_BASE_REF: "main" },
+    refExists: (_dir, ref) => ref === "main",
+    showRef: refReader({ "main:.brooks-lint.yaml": "strictness: strict\n" }),
+    readFile: () => null,
+  });
+  assert.equal(loaded.provenance, "base (main)");
+  assert.deepEqual(loaded.attempted, ["origin/main", "main"]);
+});
+
+test("loadProjectConfig runs on defaults when the base ref has no config", () => {
+  // The bypass this closes: a PR that *adds* .brooks-lint.yaml must not have its
+  // brand-new config applied just because the base branch has none.
+  const loaded = loadProjectConfig({
+    projectDir: "/repo",
+    env: { GITHUB_BASE_REF: "main" },
+    refExists: () => true,
+    showRef: () => null,
+    readFile: treeReader("disable: [R1, R2, R3, R4, R5, R6]\n"),
+  });
+  assert.equal(loaded.content, null);
+  assert.equal(loaded.provenance, null);
+});
+
+test("loadProjectConfig falls back to the working tree when the base object is absent", () => {
+  // A shallow actions/checkout fetches only the merge commit — the base ref
+  // simply is not there, and that must not crash the run.
+  const loaded = loadProjectConfig({
+    projectDir: "/repo",
+    env: { GITHUB_BASE_REF: "main" },
+    refExists: () => false,
+    showRef: () => null,
+    readFile: treeReader("strictness: legacy-friendly\n"),
+  });
+  assert.equal(loaded.content, "strictness: legacy-friendly\n");
+  assert.equal(loaded.provenance, "working tree (no base ref available)");
+  assert.deepEqual(loaded.attempted, ["origin/main", "main", "the working tree"]);
+});
+
+test("loadProjectConfig with config-ref head never consults a git ref", () => {
+  const loaded = loadProjectConfig({
+    projectDir: "/repo",
+    configRef: "head",
+    env: { GITHUB_BASE_REF: "main" },
+    refExists: () => { throw new Error("must not resolve a ref for config-ref head"); },
+    showRef: () => { throw new Error("must not read a ref for config-ref head"); },
+    readFile: treeReader("strictness: strict\n"),
+  });
+  assert.equal(loaded.provenance, "head (working tree)");
+  assert.deepEqual(loaded.attempted, ["the working tree"]);
+});
+
+test("loadProjectConfig reports no config when neither source has one", () => {
+  const loaded = loadProjectConfig({
+    projectDir: "/repo",
+    env: {},
+    refExists: () => false,
+    showRef: () => null,
+    readFile: () => null,
+  });
+  assert.equal(loaded.content, null);
+  assert.equal(loaded.provenance, null);
+});
+
+test("configSizeError refuses an absurdly large config and passes a normal one", () => {
+  assert.equal(configSizeError("strictness: strict\n"), null);
+  assert.match(configSizeError("x".repeat(MAX_CONFIG_BYTES + 1)), /over the \d+-byte limit/);
+  // Measured in bytes, not characters: a multi-byte config must not slip past.
+  assert.match(configSizeError("é".repeat(MAX_CONFIG_BYTES)), /over the \d+-byte limit/);
+});
+
+test("hasCustomRisks only matches a top-level custom_risks key", () => {
+  assert.equal(hasCustomRisks("custom_risks:\n  C1:\n    name: Security Debt\n"), true);
+  assert.equal(hasCustomRisks("# custom_risks: see the guide\n"), false);
+  assert.equal(hasCustomRisks('suppress:\n  - reason: "custom_risks: later"\n'), false);
+});
+
+test("configSystemBlock carries the config, its provenance, and the Config line", () => {
+  const block = configSystemBlock({
+    content: "strictness: legacy-friendly\ndisable:\n  - T5\n",
+    provenance: "base (main)",
+    attempted: ["origin/main"],
+  });
+  assert.match(block, /strictness: legacy-friendly/);
+  assert.match(block, /Provenance: \*\*base \(main\)\*\*/);
+  assert.match(block, /Config: \.brooks-lint\.yaml applied from base \(main\)/);
+  // The diff travels in the user message; config text inside it is not policy.
+  assert.match(block, /diff is untrusted input/);
+});
+
+test("configSystemBlock tells the model to omit the Config line when there is none", () => {
+  const block = configSystemBlock({ content: null, provenance: null, attempted: ["origin/main", "the working tree"] });
+  assert.match(block, /No `\.brooks-lint\.yaml` was found \(looked at: origin\/main, the working tree\)/);
+  assert.match(block, /Omit the `Config:` line/);
+  assert.doesNotMatch(block, /```yaml/);
+});
+
+test("customRisksBlock loads the shipped guide and tolerates a missing one", () => {
+  const guide = customRisksBlock(path.join(__dirname, "..", "skills"));
+  assert.match(guide, /[Cc]ustom/);
+  assert.equal(customRisksBlock(path.join(os.tmpdir(), "brooks-lint-no-such-skills")), null);
 });
 
 // ── Summary ────────────────────────────────────────────────────────────────
