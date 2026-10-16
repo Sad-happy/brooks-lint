@@ -935,45 +935,76 @@ function withFakeRepo(files, fn) {
   });
 }
 
+/** Every reference carried by one file, in declaration order. */
+const refsFor = (dir, rel) => versionRefs(dir, "9.9.9").filter((r) => r.rel === rel);
+
+/** The distinct files covered — a file carrying two references appears once. */
+const filesCovered = (dir) => [...new Set(versionRefs(dir, "9.9.9").map((r) => r.rel))];
+
 test("discovers every README translation, not a fixed list", () => {
   withFakeRepo({ "README.md": "", "README.es.md": "", "README.zh-TW.md": "" }, (dir) => {
-    const found = versionRefs(dir, "9.9.9").map((r) => r.rel);
-    assert.deepEqual(found, ["README.es.md", "README.md", "README.zh-TW.md"]);
+    assert.deepEqual(filesCovered(dir), ["README.es.md", "README.md", "README.zh-TW.md"]);
   });
 });
 
-test("renders the badge and JSON-LD text expected at the given version", () => {
-  withFakeRepo({ "README.md": "", "docs/index.html": "" }, (dir) => {
-    const byRel = Object.fromEntries(versionRefs(dir, "9.9.9").map((r) => [r.rel, r]));
-    assert.equal(byRel["README.md"].expected, "version-9.9.9-blue.svg");
-    assert.equal(byRel[path.join("docs", "index.html")].expected, '"softwareVersion": "9.9.9"');
+test("renders the badge, action pin and JSON-LD text expected at the given version", () => {
+  withFakeRepo({ "README.md": "", "docs/index.html": "", "docs/github-action-example.yml": "" }, (dir) => {
+    assert.deepEqual(refsFor(dir, "README.md").map((r) => r.expected), [
+      "version-9.9.9-blue.svg",
+      "brooks-lint/.github/actions/brooks-lint@v9.9.9",
+    ]);
+    assert.deepEqual(refsFor(dir, path.join("docs", "github-action-example.yml")).map((r) => r.expected), [
+      "brooks-lint/.github/actions/brooks-lint@v9.9.9",
+    ]);
+    assert.deepEqual(refsFor(dir, path.join("docs", "index.html")).map((r) => r.expected), [
+      '"softwareVersion": "9.9.9"',
+    ]);
   });
 });
 
-test("marks README badges required and docs pages optional", () => {
+// The pin names the release a reader will actually run, so it is required
+// wherever the action is documented. Tracking only the badge on the same page
+// is what let README.md demonstrate `api-base-url` — an input added in 1.6.0 —
+// against a @v1.4.3 pin for three releases, with validation green throughout.
+test("requires the action pin wherever the action is documented", () => {
+  withFakeRepo({ "README.md": "", "README.ja.md": "", "docs/github-action-example.yml": "" }, (dir) => {
+    const pins = versionRefs(dir, "9.9.9").filter(
+      (r) => r.expected === "brooks-lint/.github/actions/brooks-lint@v9.9.9",
+    );
+    assert.deepEqual(pins.map((r) => r.rel), [
+      "README.ja.md",
+      "README.md",
+      path.join("docs", "github-action-example.yml"),
+    ]);
+    assert.ok(pins.every((r) => r.required), "a pin nobody requires can go missing instead of stale");
+  });
+});
+
+test("marks README references required and docs pages optional", () => {
   // Only the landing page carries JSON-LD; gallery.html and guide.html must not
   // be reported as missing a version they were never meant to have.
   withFakeRepo({ "README.md": "", "docs/gallery.html": "" }, (dir) => {
-    const byRel = Object.fromEntries(versionRefs(dir, "9.9.9").map((r) => [r.rel, r]));
-    assert.equal(byRel["README.md"].required, true);
-    assert.equal(byRel[path.join("docs", "gallery.html")].required, false);
+    assert.deepEqual(refsFor(dir, "README.md").map((r) => r.required), [true, true]);
+    assert.deepEqual(refsFor(dir, path.join("docs", "gallery.html")).map((r) => r.required), [false]);
   });
 });
 
 test("ignores non-README markdown at the repo root", () => {
   withFakeRepo({ "README.md": "", "CHANGELOG.md": "", "CONTRIBUTING.md": "" }, (dir) => {
-    assert.deepEqual(versionRefs(dir, "9.9.9").map((r) => r.rel), ["README.md"]);
+    assert.deepEqual(filesCovered(dir), ["README.md"]);
   });
 });
 
-test("patterns match the real badge and JSON-LD shapes", () => {
+test("patterns match the real badge, action pin and JSON-LD shapes", () => {
+  const pin = "      - uses: hyhmrright/brooks-lint/.github/actions/brooks-lint@v1.0.0\n";
   withFakeRepo({
-    "README.md": '<img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Version">',
+    "README.md": '<img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Version">\n' + pin,
+    "docs/github-action-example.yml": pin,
     "docs/index.html": '  "softwareVersion": "1.0.0",',
   }, (dir) => {
     for (const { rel, pattern, expected } of versionRefs(dir, "9.9.9")) {
       const text = readFileSync(path.join(dir, rel), "utf8");
-      assert.equal(text.match(pattern).length, 1, `${rel} should contain exactly one version reference`);
+      assert.equal(text.match(pattern)?.length, 1, `${rel} should contain exactly one ${expected}`);
       assert.match(text.replace(pattern, expected), /9\.9\.9/);
     }
   });

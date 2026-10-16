@@ -21,14 +21,14 @@ jobs:
       matrix:
         node-version: [20, 22, 24]
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # Tags, not just the tip: checkChangelogCoverage() derives the
           # release's commit range from the last tag, and silently skips the
           # audit on the default shallow clone.
           fetch-depth: 0
       - name: Set up Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ matrix.node-version }}
       - name: Validate repository consistency

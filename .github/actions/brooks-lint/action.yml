@@ -40,6 +40,13 @@ branding:
 runs:
   using: "composite"
   steps:
+    # Held at v4 on purpose. setup-node v5 turned on automatic npm caching
+    # whenever a `packageManager` (or `devEngines.packageManager`) field names
+    # npm — read from `$GITHUB_WORKSPACE/package.json`, which for a composite
+    # action is the *caller's* repository, not this one. A caller that declares
+    # npm without committing a lockfile would then fail inside this step with
+    # "Dependencies lock file is not found". The SDK is cached explicitly below,
+    # so there is nothing to gain by taking that risk on other people's repos.
     - name: Setup Node
       uses: actions/setup-node@v4
       with:
@@ -60,7 +67,7 @@ runs:
 
     - name: Cache SDK
       id: cache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ${{ env.BROOKS_LINT_ROOT }}/node_modules
         key: brooks-lint-sdk-${{ runner.os }}-${{ env.BROOKS_LINT_SDK }}
@@ -110,7 +117,7 @@ runs:
 
     - name: Post PR Comment
       if: github.event_name == 'pull_request'
-      uses: actions/github-script@v7
+      uses: actions/github-script@v8
       with:
         script: |
           const fs = require('fs');
@@ -125,7 +132,7 @@ runs:
 
     - name: Upload SARIF
       if: inputs.sarif-file != ''
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: ${{ inputs.sarif-file }}
 
