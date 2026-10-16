@@ -465,6 +465,10 @@ La action publica la revisión como un comentario del PR y, opcionalmente, hace 
 
 brooks-lint envía tu diff al host que indiques aquí, así que apúntalo solo a uno en el que confíes con tu código fuente. Ejecutar `scripts/ci-review.mjs` por tu cuenta no necesita ninguna opción: el SDK de Anthropic lee `ANTHROPIC_BASE_URL` directamente.
 
+**Claude en Amazon Bedrock.** Bedrock sirve la [API de mensajes de Anthropic](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-messages-api.html) de forma nativa, así que no hace falta ningún cliente nuevo: apunta `api-base-url` (action `v1.6.0`+) a `https://bedrock-runtime.{region}.amazonaws.com/anthropic` y pasa como `anthropic-api-key` una [clave de API de Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html) de corta duración, generada dentro del propio job desde un rol asumido por OIDC, para que ninguna clave de larga duración quede guardada en un secreto. El cableado completo está en [`docs/github-action-example.yml`](docs/github-action-example.yml) como pasos comentados: asumir el rol, generar el token, los ids de modelo, los permisos de IAM necesarios y la alternativa `bedrock-mantle`. La nota de confianza de arriba sigue aplicando: con Bedrock el diff va a tu propia cuenta de AWS, en la Región que indiques.
+
+**Esta vía no puede revisar pull requests desde forks.** GitHub no concede a una ejecución `pull_request` desde un fork ni los secretos del repositorio ni `id-token: write`, así que no hay token OIDC que canjear por el rol ni clave guardada a la que recurrir. Cubrir los forks exige otro disparador (`pull_request_target`, con todo el cuidado que exige ejecutar sobre ramas no confiables) u otra fuente de clave.
+
 **Coste:** ~$0,05–0,15 por ejecución de PR, según el tamaño del diff y el modelo. Se recomienda ejecutar solo en eventos `pull_request`.
 
 ## Hoja de ruta

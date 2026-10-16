@@ -465,6 +465,10 @@ jobs:
 
 brooks-lint はここで指定したホストに diff を送信するため、ソースコードを預けられる相手だけを指定してください。`scripts/ci-review.mjs` を自分で実行する場合はフラグは不要です — Anthropic SDK が `ANTHROPIC_BASE_URL` を直接読み取ります。
 
+**Amazon Bedrock 上の Claude。** Bedrock は [Anthropic Messages API](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-messages-api.html) をネイティブに提供するため、新しいクライアントは要りません。`api-base-url`（action `v1.6.0` 以降）を `https://bedrock-runtime.{region}.amazonaws.com/anthropic` に向け、`anthropic-api-key` には短期の [Bedrock API キー](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html)を渡します — このキーは OIDC で引き受けたロールからジョブ内で発行するので、長期キーをシークレットに置く必要はありません。ロールの引き受け、トークンの発行、モデル id、必要な IAM 権限、`bedrock-mantle` という別のエンドポイント — 配線の全体はコメントアウトされたステップとして [`docs/github-action-example.yml`](docs/github-action-example.yml) にあります。上記の信頼に関する注意も引き続き有効です。Bedrock なら diff が送られるのは、あなたが指定したリージョンのあなた自身の AWS アカウントです。
+
+**この方法では fork からの pull request はレビューできません。** GitHub は fork からの `pull_request` 実行にリポジトリのシークレットも `id-token: write` も与えないため、ロールと交換する OIDC トークンも、代わりに使える保存済みキーも存在しません。fork をカバーするには別のトリガー（`pull_request_target` — 信頼できないブランチを対象に実行する際の注意をすべて払った上で）か、別のキー供給源が必要です。
+
 **コスト：** PR 実行ごとにおよそ $0.05〜0.15、diff のサイズとモデルによります。`pull_request` イベントのみで実行することを推奨します。
 
 ## ロードマップ

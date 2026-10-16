@@ -454,6 +454,10 @@ jobs:
 
 brooks-lint 會把你的 diff 傳送到這裡填寫的主機，因此只應指向你信任其接觸原始碼的一方。自己執行 `scripts/ci-review.mjs` 完全不需要參數 —— Anthropic SDK 會直接讀取 `ANTHROPIC_BASE_URL`。
 
+**Amazon Bedrock 上的 Claude。** Bedrock 原生提供 [Anthropic Messages API](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-messages-api.html)，因此不需要任何新的用戶端：把 `api-base-url`（需要 action `v1.6.0`+）指向 `https://bedrock-runtime.{region}.amazonaws.com/anthropic`，並把一個短期 [Bedrock API 金鑰](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html)作為 `anthropic-api-key` 傳入 —— 該金鑰在 job 內由透過 OIDC 擔任的角色現簽，因此不必把長期金鑰存進 secret。完整接線以註解步驟的形式放在 [`docs/github-action-example.yml`](docs/github-action-example.yml) 裡：擔任角色、簽發權杖、模型 id、所需的 IAM 權限，以及 `bedrock-mantle` 備選端點。上面那條關於信任的提醒依然成立 —— 走 Bedrock 時，diff 送往的是你自己指定區域裡的你自己的 AWS 帳戶。
+
+**這條路無法審查來自 fork 的 pull request。** GitHub 既不會把倉庫 secret、也不會把 `id-token: write` 授予 fork 的 `pull_request` 執行，於是既沒有可換取角色的 OIDC 權杖，也沒有可退而使用的既存金鑰。要涵蓋 fork，需要換用別的觸發方式（`pull_request_target`，並付出針對不受信任分支執行所需的全部謹慎），或換一個金鑰來源。
+
 **成本：** 每次 PR 執行約 $0.05–0.15，取決於 diff 大小和模型。建議僅在 `pull_request` 事件上執行。
 
 ## 路線圖
