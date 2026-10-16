@@ -22,10 +22,7 @@ jobs:
       # installs. Bump this deliberately.
       - uses: hyhmrright/brooks-lint/.github/actions/brooks-lint@v1.4.3
         with:
-          # review | audit | debt | test | health | sweep. `sweep` only
-          # diagnoses here: CI makes one tool-less API call, so its consent
-          # gate, file edits, and iteration loop never run and the Fix Log
-          # comes back empty. Run /brooks-sweep interactively to apply fixes.
+          # review | audit | debt | test | health | sweep
           mode: review
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           fail-below: 70  # fail the check if Health Score drops below 70
