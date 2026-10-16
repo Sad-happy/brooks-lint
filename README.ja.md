@@ -456,7 +456,7 @@ jobs:
 ```yaml
         with:
           mode: review
-          api-base-url: https://your-gateway.example.com  # requires v1.6.0+
+          api-base-url: https://your-gateway.example.com
           anthropic-api-key: ${{ secrets.GATEWAY_API_KEY }}
           model: gateway-model-id
 ```
