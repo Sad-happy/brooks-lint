@@ -12,7 +12,8 @@ jobs:
       pull-requests: write   # required to post PR comments
       # security-events: write  # uncomment to upload SARIF to Code Scanning (sarif-file)
       # id-token: write         # uncomment for the Bedrock path: mints the OIDC token that assumes the AWS role
-    # Claude on Amazon Bedrock (step 0 of 3): uncomment this env block together with the three
+
+    # Claude on Amazon Bedrock (step 0 of 3): uncomment id-token and env block with the three
     # steps marked "Bedrock path" below. The Region is declared once, here, and
     # everything else derives from it.
     # env:
