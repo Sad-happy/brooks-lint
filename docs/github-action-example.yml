@@ -12,10 +12,9 @@ jobs:
       pull-requests: write   # required to post PR comments
       # security-events: write  # uncomment to upload SARIF to Code Scanning (sarif-file)
       # id-token: write         # uncomment for the Bedrock path: mints the OIDC token that assumes the AWS role
-
-    # Claude on Amazon Bedrock: uncomment this env block together with the two
-    # steps and the three `with:` options marked "Bedrock path" below. The
-    # Region is declared once, here, and everything else derives from it.
+    # Claude on Amazon Bedrock: uncomment this env block together with the three
+    # steps marked "Bedrock path" below. The Region is declared once, here, and
+    # everything else derives from it.
     # env:
     #   AWS_REGION: us-east-1   # the only place the Region appears
 
@@ -24,25 +23,18 @@ jobs:
         with:
           fetch-depth: 0  # needed for git diff main...HEAD
 
-      # Bedrock path (1 of 2) — assume the role that is allowed to invoke the
-      # model. v6 runs on node24, so a self-hosted runner needs >= v2.327.1.
+      # Bedrock path (step 1 of 3) — assume the role allowed to invoke the model.
       # - uses: aws-actions/configure-aws-credentials@v6
       #   with:
       #     role-to-assume: arn:aws:iam::111122223333:role/brooks-lint-bedrock
       #     aws-region: ${{ env.AWS_REGION }}   # written out rather than left to the action's env-to-input translation
       #
-      # Bedrock path (2 of 2) — mint a short-term Bedrock API key: good for up
-      # to 12 hours, inheriting the permissions of the assumed role and nothing
-      # more, so no long-lived key ever sits in a secret. The generator reads
-      # the credentials and the AWS_REGION that configure-aws-credentials
-      # re-exported (`output-env-credentials`, default true), so it takes no
-      # arguments of its own; with `aws-profile`, or with that re-export turned
-      # off, set the job-level env yourself.
+      # Bedrock path (step 2 of 3) — mint a short-term Bedrock API key.
       # - id: bedrock
       #   working-directory: ${{ runner.temp }}
       #   shell: bash
       #   run: |
-      #     npm install --no-save @aws/bedrock-token-generator
+      #     npm install --no-save @aws/bedrock-token-generator   # reads the AWS_REGION re-exported above
       #     token=$(node --input-type=module -e '
       #       import { getTokenProvider } from "@aws/bedrock-token-generator";
       #       const provideToken = getTokenProvider();
@@ -51,14 +43,9 @@ jobs:
       #     echo "::add-mask::$token"   # keep it out of the log before it moves
       #     echo "token=$token" >> "$GITHUB_OUTPUT"
       #
-      # Two prerequisites, both outside this repo: access to that Claude model
-      # enabled in the Region you name (Bedrock console -> Model access), and
-      # an IAM role this workflow may assume whose policy permits the
-      # invocation — `bedrock:InvokeModel` plus `bedrock:CallWithBearerToken`,
-      # or `bedrock-mantle:CallWithBearerToken` on the Mantle endpoint. The
-      # minted token inherits that role and nothing more, so the role is the
-      # whole blast radius. A forked `pull_request` run gets neither repository
-      # secrets nor `id-token: write`, so this path cannot review fork PRs.
+      # Prerequisites: model access enabled in that Region, and a role permitting
+      # `bedrock:InvokeModel` + `bedrock:CallWithBearerToken` (or
+      # `bedrock-mantle:CallWithBearerToken` on Mantle). Cannot review fork PRs.
 
       # Pin to a release tag. `@main` would silently re-point at unreviewed
       # changes on every run — including the Anthropic SDK version the action
@@ -67,18 +54,12 @@ jobs:
         with:
           mode: review
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Bedrock path (step 3 of 3) — uncomment these three, replacing the line above
+          # anthropic-api-key: ${{ steps.bedrock.outputs.token }}
+          # api-base-url: https://bedrock-runtime.${{ env.AWS_REGION }}.amazonaws.com/anthropic  # or https://bedrock-mantle.${{ env.AWS_REGION }}.api.aws/anthropic for Mantle
+          # model: global.anthropic.claude-sonnet-5  # ids pass through unchanged
           fail-below: 70  # fail the check if Health Score drops below 70
           # fail-on: critical            # fail on any Critical finding (none | warning | critical)
           # fail-on-regression: true     # fail if the Health Score dropped vs the last run
           # sarif-file: brooks-lint.sarif  # also upload findings to GitHub Code Scanning
-          # api-base-url: https://your-gateway.example.com  # any Anthropic-compatible /v1/messages endpoint — requires v1.6.0+
-          #
-          # Bedrock path — uncomment these three, replacing the
-          # `anthropic-api-key` line above rather than adding a second one
-          # (duplicate keys in one `with:` block are invalid YAML):
-          # api-base-url: https://bedrock-runtime.${{ env.AWS_REGION }}.amazonaws.com/anthropic
-          # anthropic-api-key: ${{ steps.bedrock.outputs.token }}
-          # model: global.anthropic.claude-sonnet-5  # us.anthropic.* and bare anthropic.* ids pass through unchanged too
-          #
-          # The other endpoint is https://bedrock-mantle.${{ env.AWS_REGION }}.api.aws/anthropic,
-          # the Anthropic-compatible Mantle surface; AWS recommends bedrock-runtime for new applications.
+          # api-base-url: https://your-gateway.example.com  # any Anthropic-compatible /v1/messages endpoint
