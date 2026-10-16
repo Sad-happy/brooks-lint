@@ -6,8 +6,9 @@
  * injects the project `.brooks-lint.yaml` (see ci-config.mjs — this path has no
  * tools, so an uninjected config is an unapplied one),
  * calls Claude API, and outputs JSON { report, score, mode, scope, trend,
- * findings, previousScore, delta } to stdout. With --format sarif it emits a
- * SARIF 2.1.0 log instead (for GitHub Code Scanning).
+ * findings, previousScore, delta, truncated } to stdout. With --format sarif it
+ * emits a SARIF 2.1.0 log instead (for GitHub Code Scanning); a truncated
+ * report is annotated on stderr either way.
  *
  * Usage:
  *   node scripts/ci-review.mjs \
@@ -17,7 +18,8 @@
  *     --project-dir /path/to/project \
  *     [--config-ref base|head] \
  *     [--format json|sarif] \
- *     [--sarif-out brooks-lint.sarif]
+ *     [--sarif-out brooks-lint.sarif] \
+ *     [--max-tokens 4096]
  *
  * Environment:
  *   ANTHROPIC_API_KEY  required
@@ -40,7 +42,7 @@ import {
 import { readHistory, getTrend } from "./history.mjs";
 import { countFindings } from "./report-parse.mjs";
 import { reportToSarif } from "./sarif.mjs";
-import { parseArgs } from "./cli-utils.mjs";
+import { parseArgs, parseMaxTokens, maxTokensError, warnIfTruncated } from "./cli-utils.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -50,6 +52,7 @@ const mode = args.mode ?? "review";
 const model = args.model ?? "claude-sonnet-4-6";
 const format = args.format ?? "json";
 const configRef = args["config-ref"] ?? "base";
+const maxTokens = parseMaxTokens(args["max-tokens"]);
 const skillsDir = path.resolve(args["skills-dir"] ?? path.join(__dirname, "..", "skills"));
 const projectDir = path.resolve(args["project-dir"] ?? process.cwd());
 const toolVersion = JSON.parse(
@@ -68,6 +71,11 @@ if (!["json", "sarif"].includes(format)) {
 
 if (!CONFIG_REFS.includes(configRef)) {
   console.error(`Unknown config-ref: ${configRef}. Valid values: ${CONFIG_REFS.join(", ")}`);
+  process.exit(1);
+}
+
+if (maxTokens === null) {
+  console.error(maxTokensError(args["max-tokens"]));
   process.exit(1);
 }
 
@@ -134,7 +142,7 @@ let message;
 try {
   message = await client.messages.create({
     model,
-    max_tokens: 4096,
+    max_tokens: maxTokens,
     system: systemBlocks,
     messages: [{ role: "user", content: userMessage }],
   });
@@ -142,6 +150,13 @@ try {
   console.error(JSON.stringify({ error: err.message, mode, scope }, null, 2));
   process.exit(1);
 }
+
+// A response that stopped at the ceiling is missing the findings it had not
+// written yet, and every number below is derived from the findings that did
+// arrive: countFindings() counts fewer of them and the Health Score, being
+// base 100 minus deductions, comes back higher. Say so on the run before
+// emitting a score a fail-below gate is about to believe.
+const truncated = warnIfTruncated(message);
 
 // The first block is not always the text one — an endpoint that returns a
 // thinking block first would otherwise yield undefined.
@@ -183,7 +198,7 @@ if (format === "sarif") {
   console.log(sarif);
 } else {
   console.log(JSON.stringify(
-    { report, score, mode, scope, trend: trendNote, findings, previousScore, delta },
+    { report, score, mode, scope, trend: trendNote, findings, previousScore, delta, truncated },
     null,
     2,
   ));

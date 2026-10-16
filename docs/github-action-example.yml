@@ -71,3 +71,4 @@ jobs:
           # fail-on-regression: true     # fail if the Health Score dropped vs the last run
           # sarif-file: brooks-lint.sarif  # also upload findings to GitHub Code Scanning
           # api-base-url: https://your-gateway.example.com  # any Anthropic-compatible /v1/messages endpoint
+          # max-tokens: 8192             # raise the 4096 output ceiling; a truncated report scores too HIGH

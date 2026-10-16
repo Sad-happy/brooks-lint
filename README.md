@@ -478,6 +478,8 @@ brooks-lint sends your diff to whatever host you name here, so only point it at 
 
 **This path cannot review pull requests from forks.** GitHub grants a forked `pull_request` run neither repository secrets nor `id-token: write`, so there is no OIDC token to exchange for the role and no stored key to fall back on. Fork coverage needs a different trigger (`pull_request_target`, with all the care that running against untrusted branches demands) or a different key source.
 
+**Output ceiling.** `max-tokens: 8192` raises the report's output ceiling (default 4096). A long `sweep` or `health` report can hit that ceiling, and truncation fails in the wrong direction: the findings that were cut off are never counted, so the Health Score comes back *higher* and a `fail-below` gate can pass a run it should have failed. You do not have to notice that yourself: a run whose report was cut off carries a `::warning::` annotation, repeats the warning in the PR comment, and sets `"truncated": true` in `brooks-lint-report.json` — raise `max-tokens` and re-run. The run is not failed over it.
+
 **Cost:** ~$0.05–0.15 per PR run depending on diff size and model. Recommend running on `pull_request` events only.
 
 ## Roadmap
