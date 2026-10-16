@@ -2,6 +2,30 @@
 
 All notable changes to brooks-lint are documented here.
 
+## [1.8.0] - 2026-10-16
+
+### Added
+
+- Configurable model output ceilings through the GitHub Action's `max-tokens` input and the `--max-tokens` CLI flag, with positive safe-integer validation (#39, #42). Thanks to @scottschreckengaust.
+- A `config-ref` Action input: CI now loads `.brooks-lint.yaml` and conditional custom-risk guidance into a separate system-policy block. Pull requests use the trusted base policy by default; `config-ref: head` explicitly opts into the checkout policy (#40). Thanks to @scottschreckengaust.
+- Community-contributed documentation and an OIDC workflow example for Claude on Amazon Bedrock and Mantle using the existing custom-endpoint support (#38). Thanks to @scottschreckengaust. These integrations are retained but are outside ongoing maintainer verification.
+
+- Shared review guidance and the sweep report now identify configuration provenance and honor runner-supplied policy. Added a base-policy suppression regression scenario, bringing the structural eval suite to 58 scenarios (#40). Thanks to @scottschreckengaust.
+
+### Fixed
+
+- Truncated reports now emit a workflow warning, carry `truncated: true` in JSON, and display a warning in PR comments so incomplete findings and inflated Health Scores are visible. The existing live-eval runner also detects truncation (#42). Thanks to @scottschreckengaust.
+- CI applies configured strictness and other project policy instead of silently using defaults. An unavailable PR base policy now fails explicitly rather than falling back to unapproved head policy (#40; closes #43).
+- Documented Action pins now track the release version automatically across all six READMEs and the workflow example; updated executable GitHub Action dependencies and added regression checks against version drift (#41). Thanks to @scottschreckengaust.
+- Release-audit output now handles zero and singular counts correctly, announces audit scope, and has stronger regression coverage. Release-audit test fixtures use an isolated baseline tag so inherited branch history cannot invalidate them.
+
+### Changed
+
+- Migrated repository maintenance from Claude Code to Codex: discoverable local skill links, Codex agent roles, a sequential maintenance harness, and explicit offline validation gates. Completed changes must be committed and pushed.
+- **Maintainer testing policy:** the maintainer's Claude account has been banned. From 2026-10-16 onward, ongoing maintainer testing and verification cover only Codex-related capabilities. Previous verification of Claude Code, Gemini CLI, and other platforms is historical. Existing integrations remain available, and community verification and contributions are welcome.
+- This policy does not migrate the GitHub Action or live-eval runner to an OpenAI backend: they still use the existing Anthropic client. Anthropic live evals are no longer part of routine maintainer verification; offline validation, unit tests, structural evals, and the parser benchmark remain in use.
+- Clarified across all six READMEs and the workflow example that `mode: sweep` in CI reports findings without applying fixes (#37). Thanks to @scottschreckengaust. Also clarified token-input descriptions and removed redundant minimum-version annotations now covered by version-reference validation (#41, #42).
+
 ## [1.7.0] - 2026-09-20
 
 Maintainer-facing only — the six skills, their guides, and everything the plugin
